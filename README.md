@@ -1,4 +1,4 @@
-# ME5413_Final_Project
+# ME5413_Final_Project_group11
 
 NUS ME5413 Autonomous Mobile Robotics Final Project AY25/26
 > Authors: [Christina](https://github.com/ldaowen), [Ziggy](https://github.com/ziggyhuang), [Dongen](https://github.com/nuslde), and [Shuo](https://github.com/SS47816)
