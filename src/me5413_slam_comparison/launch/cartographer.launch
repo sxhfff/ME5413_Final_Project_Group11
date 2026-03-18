@@ -1,0 +1,22 @@
+<launch>
+
+<node pkg="cartographer_ros"
+      type="cartographer_node"
+      name="cartographer_node"
+      args="-configuration_directory $(find me5413_slam_comparison)/config/cartographer
+            -configuration_basename cartographer.lua"
+      output="screen">
+
+<remap from="scan" to="/scan"/>
+
+</node>
+
+<node pkg="cartographer_ros"
+      type="cartographer_occupancy_grid_node"
+      name="occupancy_grid_node">
+
+<param name="resolution" value="0.05"/>
+
+</node>
+
+</launch>
