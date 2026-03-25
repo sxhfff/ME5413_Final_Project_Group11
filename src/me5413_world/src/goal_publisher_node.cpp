@@ -20,12 +20,14 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->pub_absolute_heading_error_ = nh_.advertise<std_msgs::Float32>("/me5413_world/absolute/heading_error", 1);
   this->pub_relative_position_error_ = nh_.advertise<std_msgs::Float32>("/me5413_world/relative/position_error", 1);
   this->pub_relative_heading_error_ = nh_.advertise<std_msgs::Float32>("/me5413_world/relative/heading_error", 1);
+  this->pub_cmd_unblock_ = nh_.advertise<std_msgs::Bool>("/cmd_unblock", 1);
 
   this->timer_ = nh_.createTimer(ros::Duration(0.2), &GoalPublisherNode::timerCallback, this);
   this->sub_robot_odom_ = nh_.subscribe("/gazebo/ground_truth/state", 1, &GoalPublisherNode::robotOdomCallback, this);
   this->sub_goal_name_ = nh_.subscribe("/rviz_panel/goal_name", 1, &GoalPublisherNode::goalNameCallback, this);
   this->sub_goal_pose_ = nh_.subscribe("/move_base_simple/goal", 1, &GoalPublisherNode::goalPoseCallback, this);
   this->sub_box_markers_ = nh_.subscribe("/gazebo/ground_truth/box_markers", 1, &GoalPublisherNode::boxMarkersCallback, this);
+  this->sub_planning_ready_ = nh_.subscribe("/planning_ready", 1, &GoalPublisherNode::planningReadyCallback, this);
   
   // Initialization
   this->robot_frame_ = "base_link";
@@ -35,14 +37,35 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->absolute_heading_error_.data = 0.0;
   this->relative_position_error_.data = 0.0;
   this->relative_heading_error_.data = 0.0;
+
+  this->planning_ready_ = false;
+  this->cone_open_sent_ = false;
+  this->mission_stage_ = 0;
+  this->goal_reached_tolerance_ = 0.5;
 };
 
 void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
 {
+
+  geometry_msgs::TransformStamped transform_map_world;
+  try
+  {
+    transform_map_world = this->tf2_buffer_.lookupTransform(
+        this->map_frame_, this->world_frame_, ros::Time(0));
+    tf2::doTransform(this->pose_world_robot_, this->pose_map_robot_, transform_map_world);
+  }
+  catch (tf2::TransformException& ex)
+  {
+    ROS_WARN("%s", ex.what());
+    return;
+  }
+
+
   // Calculate absolute errors (wrt to world frame)
   const std::pair<double, double> error_absolute = calculatePoseError(this->pose_world_robot_, this->pose_world_goal_);
   // Calculate relative errors (wrt to map frame)
   const std::pair<double, double> error_relative = calculatePoseError(this->pose_map_robot_, this->pose_map_goal_);
+
   
   this->absolute_position_error_.data = error_absolute.first;
   this->absolute_heading_error_.data = error_absolute.second;
@@ -61,7 +84,43 @@ void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
   this->pub_relative_position_error_.publish(this->relative_position_error_);
   this->pub_relative_heading_error_.publish(this->relative_heading_error_);
 
-  return;
+    // ===== mission logic =====
+  if (!this->planning_ready_)
+  {
+    return;
+  }
+
+  const double current_error = this->relative_position_error_.data;
+
+  ROS_INFO_STREAM("mission_stage = " << this->mission_stage_
+              << ", current_error = " << current_error
+              << ", tolerance = " << this->goal_reached_tolerance_);
+
+  // 到达第一个点后：发清除 cone 命令，然后去第二个点
+  if (this->mission_stage_ == 1 && current_error < this->goal_reached_tolerance_)
+  {
+    if (!this->cone_open_sent_)
+    {
+      std_msgs::Bool unblock_msg;
+      unblock_msg.data = true;
+      this->pub_cmd_unblock_.publish(unblock_msg);
+      this->cone_open_sent_ = true;
+
+      ROS_INFO_STREAM("Reached point 1. Sent cone unblock command.");
+    }
+
+    // 立刻去第二个点
+    this->publishGoal(8.172088623046875, -3.7233381271362305, 0);
+    this->mission_stage_ = 2;
+
+    ROS_INFO_STREAM("Mission stage 2 started.");
+  }
+  else if (this->mission_stage_ == 2 && current_error < this->goal_reached_tolerance_)
+  {
+    this->mission_stage_ = 3;
+    ROS_INFO_STREAM("Mission completed: reached point 2.");
+  }
+
 };
 
 void GoalPublisherNode::robotOdomCallback(const nav_msgs::Odometry::ConstPtr& odom)
@@ -92,6 +151,13 @@ void GoalPublisherNode::robotOdomCallback(const nav_msgs::Odometry::ConstPtr& od
 
 void GoalPublisherNode::goalNameCallback(const std_msgs::String::ConstPtr& name)
 { 
+
+    if (!this->planning_ready_)
+  {
+    ROS_WARN_STREAM("Planning is not ready yet. Please click spawn first.");
+    return;
+  }
+  
   const std::string goal_name = name->data;
   const int end = goal_name.find_last_of("_");
   this->goal_type_ = goal_name.substr(1, end-1);
@@ -166,6 +232,33 @@ tf2::Transform GoalPublisherNode::convertPoseToTransform(const geometry_msgs::Po
   return T;
 };
 
+void GoalPublisherNode::planningReadyCallback(const std_msgs::Bool::ConstPtr& msg)
+{
+  this->planning_ready_ = msg->data;
+  ROS_INFO_STREAM("planning_ready = " << this->planning_ready_);
+
+  if (!this->planning_ready_)
+  {
+    this->cone_open_sent_ = false;
+    this->mission_stage_ = 0;
+    return;
+  }
+
+  // 只有在任务尚未开始时，才发第一个点
+  if (this->mission_stage_ != 0)
+  {
+    return;
+  }
+
+  // Stage 1: 先去第一个点
+  this->publishGoal(7.509763717651367, -1.0430545806884766, -M_PI/2);
+
+  this->mission_stage_ = 1;
+  this->cone_open_sent_ = false;
+
+  ROS_INFO_STREAM("Mission stage 1 started.");
+}
+
 void GoalPublisherNode::boxMarkersCallback(const visualization_msgs::MarkerArray::ConstPtr& box_markers)
 {
   this->box_poses_.clear();
@@ -202,6 +295,28 @@ geometry_msgs::PoseStamped GoalPublisherNode::getGoalPoseFromConfig(const std::s
 
   return P_world_goal;
 };
+
+void GoalPublisherNode::publishGoal(double x, double y, double yaw)
+{
+  geometry_msgs::PoseStamped goal;
+  goal.header.frame_id = "map";
+  goal.header.stamp = ros::Time::now();
+  goal.pose.position.x = x;
+  goal.pose.position.y = y;
+  goal.pose.position.z = 0.0;
+
+  tf2::Quaternion q;
+  q.setRPY(0, 0, yaw);
+
+  goal.pose.orientation.x = q.x();
+  goal.pose.orientation.y = q.y();
+  goal.pose.orientation.z = q.z();
+  goal.pose.orientation.w = q.w();
+
+  this->pub_goal_.publish(goal);
+
+  ROS_INFO_STREAM("Published goal: x=" << x << ", y=" << y << ", yaw=" << yaw);
+}
 
 std::pair<double, double> GoalPublisherNode::calculatePoseError(const geometry_msgs::Pose& pose_robot, const geometry_msgs::Pose& pose_goal)
 {

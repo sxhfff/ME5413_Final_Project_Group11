@@ -7,6 +7,7 @@
 **/
 
 #include "me5413_world/object_spawner_gz_plugin.hpp"
+#include <std_msgs/Bool.h>
 
 namespace gazebo
 {
@@ -40,6 +41,7 @@ void ObjectSpawner::Load(physics::WorldPtr _world, sdf::ElementPtr _sdf)
   this->pub_box_cmd_vel_ = nh_.advertise<geometry_msgs::Twist>("/box_cmd_vel", 10);
   this->sub_box_odom_ = nh_.subscribe("/box_odom", 10, &ObjectSpawner::boxOdomCallback, this);
   this->pub_rviz_markers_ = nh_.advertise<visualization_msgs::MarkerArray>("/gazebo/ground_truth/box_markers", 0);
+  this->pub_planning_ready_ = nh_.advertise<std_msgs::Bool>("/planning_ready", 1, true);
   bridge_open_called_ = false;
   return;
 };
@@ -318,6 +320,11 @@ void ObjectSpawner::respawnCmdCallback(const std_msgs::Int16::ConstPtr& respawn_
     common::Time::MSleep(500);
     deleteBoxes();
     ROS_INFO_STREAM("Random Objects Cleared!");
+
+    std_msgs::Bool ready_msg;
+    ready_msg.data = false;
+    this->pub_planning_ready_.publish(ready_msg);
+    ROS_INFO_STREAM("Planning disabled.");
   }
   else if (cmd == 1)
   {
@@ -333,6 +340,12 @@ void ObjectSpawner::respawnCmdCallback(const std_msgs::Int16::ConstPtr& respawn_
     spawnCone();
     common::Time::MSleep(500);
     spawnRandomBoxes();
+
+    std_msgs::Bool ready_msg;
+    ready_msg.data = true;
+    this->pub_planning_ready_.publish(ready_msg);
+    ROS_INFO_STREAM("Planning enabled.");
+    
     ROS_INFO_STREAM("Random Objects Respawned!");
     bridge_open_called_ = false;
   }

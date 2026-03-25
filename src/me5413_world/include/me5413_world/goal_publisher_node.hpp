@@ -19,6 +19,7 @@
 #include <ros/console.h>
 #include <std_msgs/String.h>
 #include <std_msgs/Float32.h>
+#include <std_msgs/Bool.h>
 #include <nav_msgs/Odometry.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -32,6 +33,8 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <visualization_msgs/MarkerArray.h>
+
+
 
 namespace me5413_world 
 {
@@ -48,6 +51,13 @@ class GoalPublisherNode
   void goalNameCallback(const std_msgs::String::ConstPtr& name);
   void goalPoseCallback(const geometry_msgs::PoseStamped::ConstPtr& goal_pose);
   void boxMarkersCallback(const visualization_msgs::MarkerArray::ConstPtr& box_markers);
+  void planningReadyCallback(const std_msgs::Bool::ConstPtr& msg);
+  void publishGoal(double x, double y, double yaw);
+
+  bool planning_ready_;
+  bool cone_open_sent_;
+  int mission_stage_;
+  double goal_reached_tolerance_;
   
   tf2::Transform convertPoseToTransform(const geometry_msgs::Pose& pose);
   geometry_msgs::PoseStamped getGoalPoseFromConfig(const std::string& name);
@@ -62,11 +72,14 @@ class GoalPublisherNode
   ros::Publisher pub_absolute_heading_error_;
   ros::Publisher pub_relative_position_error_;
   ros::Publisher pub_relative_heading_error_;
+  ros::Publisher pub_cmd_unblock_;
 
   ros::Subscriber sub_robot_odom_;
   ros::Subscriber sub_goal_name_;
   ros::Subscriber sub_goal_pose_;
   ros::Subscriber sub_box_markers_;
+
+  ros::Subscriber sub_planning_ready_;
 
   tf2_ros::Buffer tf2_buffer_;
   tf2_ros::TransformListener tf2_listener_;

@@ -58,6 +58,8 @@ class ObjectSpawner : public WorldPlugin
   ros::Publisher pub_box_cmd_vel_;
   ros::Subscriber sub_box_odom_;
 
+  ros::Publisher pub_planning_ready_;
+
   visualization_msgs::MarkerArray box_markers_msg_;
 
   bool bridge_open_called_;
