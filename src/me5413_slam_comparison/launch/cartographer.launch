@@ -1,22 +1,27 @@
 <launch>
+  <!-- MAIN CARTOGRAPHER (NO BAD FLAGS) -->
+  <node pkg="cartographer_ros"
+        name="cartographer_node"
+        type="cartographer_node"
+        output="screen"
+        args="
+          -configuration_directory $(find me5413_slam_comparison)/config/cartographer
+          -configuration_basename cartographer.lua">
 
-<node pkg="cartographer_ros"
-      type="cartographer_node"
-      name="cartographer_node"
-      args="-configuration_directory $(find me5413_slam_comparison)/config/cartographer
-            -configuration_basename cartographer.lua"
-      output="screen">
+    <!-- Your bag uses /front/scan -->
+    <remap from="/scan" to="/front/scan"/>
+    <param name="/use_odometry" value="false"/>
+  
+  </node>
 
-<remap from="scan" to="/scan"/>
-
-</node>
-
-<node pkg="cartographer_ros"
-      type="cartographer_occupancy_grid_node"
-      name="occupancy_grid_node">
-
-<param name="resolution" value="0.05"/>
-
-</node>
+  <!-- OPTIMIZED OCCUPANCY GRID -->
+  <node pkg="cartographer_ros"
+        name="occupancy_grid_node"
+        type="cartographer_occupancy_grid_node"
+        output="screen">
+    <param name="resolution" value="0.05"/>
+    <param name="publish_period_sec" value="2.0"/>     <!-- SLOWER = FASTER SAVE -->
+  </node>
 
 </launch>
+

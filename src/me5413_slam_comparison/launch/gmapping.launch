@@ -42,6 +42,13 @@
     <param name="llsamplestep" value="0.01"/>
     <param name="lasamplerange" value="0.005"/>
     <param name="lasamplestep" value="0.005"/>
+    <param name="srr" value="0.2"/>  <!-- Rotational noise (left/right wheels) -->
+    <param name="srt" value="0.1"/>  <!-- Rotational drift (systematic turn error) -->
+    <param name="str" value="0.2"/>  <!-- Translational noise (forward motion) -->
+    <param name="stt" value="0.1"/>  <!-- Translational drift (wheel slip) -->
+    <param name="iterations" value="8"/>     <!-- 5→8: finer wall alignment -->
+    <param name="llsamplerange" value="0.02"/> <!-- 0.01→0.02: wider pose search -->
+    <param name="lasamplerange" value="0.01"/> <!-- Better angle search -->
   </node>
 
   <!-- RViz for visualization -->
