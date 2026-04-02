@@ -1,0 +1,58 @@
+task:
+  result_topic: /group11/least_box_type
+  status_topic: /group11/floor2_task/status
+  dry_run: false
+  goal_timeout_sec: 120.0
+  pause_before_final_park_sec: 1.0
+  room_goal_retry_limit: 1
+  fallback_to_other_entry: true
+  active_map_file: /home/yushi/ros_ws/src/ME5413_Final_Project_Group11/src/me5413_world/maps/my_map_cropped_nav.yaml
+
+box_type_to_room:
+  1: room_a
+  2: room_b
+  3: room_c
+  4: room_d
+
+navigation_goals:
+  ramp_goal:
+    frame_id: map
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+  floor2_entry_a:
+    frame_id: map
+    x: 0.5
+    y: 1.0
+    yaw: 0.0
+  floor2_entry_b:
+    frame_id: map
+    x: 1.5
+    y: 1.0
+    yaw: 0.0
+  room_a:
+    frame_id: map
+    x: 2.0
+    y: 2.0
+    yaw: 0.0
+  room_b:
+    frame_id: map
+    x: 3.0
+    y: 2.0
+    yaw: 0.0
+  room_c:
+    frame_id: map
+    x: 4.0
+    y: 2.0
+    yaw: 0.0
+  room_d:
+    frame_id: map
+    x: 5.0
+    y: 2.0
+    yaw: 0.0
+
+room_entry_priority:
+  room_a: [floor2_entry_a, floor2_entry_b]
+  room_b: [floor2_entry_a, floor2_entry_b]
+  room_c: [floor2_entry_b, floor2_entry_a]
+  room_d: [floor2_entry_b, floor2_entry_a]

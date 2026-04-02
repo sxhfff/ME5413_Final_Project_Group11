@@ -61,6 +61,7 @@
   <depend>jackal_navigation</depend>
   <depend>teleop_twist_keyboard</depend>
   <depend>velodyne_simulator</depend>
+  <exec_depend>pointcloud_to_laserscan</exec_depend>
   
   <!-- The export tag contains other, unspecified, tags -->
   <export>

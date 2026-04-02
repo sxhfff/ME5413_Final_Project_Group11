@@ -1,0 +1,14 @@
+<launch>
+  <!--
+    Stair traversal mode for FAST-LIO + pointcloud_to_laserscan + gmapping.
+    Keep the same algorithm stack, but tighten the 3D-to-2D projection band
+    and shorten usable range so second-floor structures are less likely to
+    overwrite the first-floor map while climbing.
+  -->
+  <include file="$(find me5413_world)/launch/fastlio_gmapping_2d.launch">
+    <arg name="min_height" value="0.20"/>
+    <arg name="max_height" value="0.32"/>
+    <arg name="range_max" value="7.0"/>
+    <arg name="range_min" value="0.40"/>
+  </include>
+</launch>

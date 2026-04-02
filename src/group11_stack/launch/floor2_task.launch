@@ -1,0 +1,15 @@
+<launch>
+  <arg name="config_file" default="$(find group11_stack)/config/floor2_task.yaml"/>
+  <arg name="least_box_type_topic" default="/group11/least_box_type"/>
+  <arg name="dry_run" default="false"/>
+
+  <rosparam command="load" file="$(arg config_file)"/>
+
+  <node pkg="group11_stack"
+        type="floor2_task_node.py"
+        name="floor2_task_node"
+        output="screen">
+    <param name="task/result_topic" value="$(arg least_box_type_topic)"/>
+    <param name="task/dry_run" value="$(arg dry_run)"/>
+  </node>
+</launch>

@@ -1,0 +1,39 @@
+<launch>
+  <arg name="pointcloud_topic" default="/mid/points"/>
+  <arg name="imu_topic" default="/imu/data"/>
+  <arg name="config_file" default="$(find me5413_world)/config/fast_lio_velodyne.yaml"/>
+  <arg name="world_frame" default="map"/>
+  <arg name="body_frame" default="base_link"/>
+  <arg name="camera_frame" default="base_link"/>
+  <arg name="publish_tf" default="true"/>
+  <arg name="bridge_fastlio_to_robot_tf" default="true"/>
+
+  <!--
+    This wrapper assumes the external package exposes the official FAST-LIO ROS1 node
+    "fastlio_mapping" in package "fast_lio". The topic names are adapted to this project's
+    Gazebo Jackal simulation: /mid/points for Velodyne and /imu/data for the onboard IMU.
+  -->
+  <rosparam command="load" file="$(arg config_file)"/>
+  <param name="/common/lid_topic" value="$(arg pointcloud_topic)"/>
+  <param name="/common/imu_topic" value="$(arg imu_topic)"/>
+  <param name="/publish/tf_en" value="$(arg publish_tf)"/>
+  <param name="/publish/map_frame" value="$(arg world_frame)"/>
+  <param name="/publish/body_frame" value="$(arg body_frame)"/>
+  <param name="/publish/camera_frame" value="$(arg camera_frame)"/>
+
+  <node pkg="fast_lio" type="fastlio_mapping" name="fastlio_mapping" output="screen">
+    <remap from="/livox/lidar" to="$(arg pointcloud_topic)"/>
+    <remap from="/livox/imu" to="$(arg imu_topic)"/>
+  </node>
+
+  <!--
+    FAST-LIO in this workspace publishes camera_init -> body, while the simulated robot model
+    lives in the odom -> base_link tree. Bridge the trees for RViz visualization so RobotModel
+    and FAST-LIO point clouds can be displayed together.
+  -->
+  <node if="$(arg bridge_fastlio_to_robot_tf)"
+        pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="fastlio_odom_bridge"
+        args="0 0 0 0 0 0 camera_init odom"/>
+</launch>
