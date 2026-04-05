@@ -40,25 +40,26 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
 
   this->planning_ready_ = false;
   this->cone_open_sent_ = false;
+  this->robot_pose_received_ = false;
   this->mission_stage_ = 0;
   this->goal_reached_tolerance_ = 0.5;
 };
 
 void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
 {
-
-  geometry_msgs::TransformStamped transform_map_world;
-  try
+  if (!this->robot_pose_received_)
   {
-    transform_map_world = this->tf2_buffer_.lookupTransform(
-        this->map_frame_, this->world_frame_, ros::Time(0));
-    tf2::doTransform(this->pose_world_robot_, this->pose_map_robot_, transform_map_world);
-  }
-  catch (tf2::TransformException& ex)
-  {
-    ROS_WARN("%s", ex.what());
+    ROS_WARN_THROTTLE(5.0, "Waiting for /gazebo/ground_truth/state before computing mission progress.");
     return;
   }
+
+  geometry_msgs::TransformStamped transform_map_world;
+  if (!this->tryLookupMapToWorld(transform_map_world))
+  {
+    return;
+  }
+
+  tf2::doTransform(this->pose_world_robot_, this->pose_map_robot_, transform_map_world);
 
 
   // Calculate absolute errors (wrt to world frame)
@@ -110,7 +111,7 @@ void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
     }
 
     // 立刻去第二个点
-    this->publishGoal(8.172088623046875, -3.7233381271362305, 0);
+    this->publishGoal(8.493532180786133, -2.0953121185302734,0.0);
     this->mission_stage_ = 2;
 
     ROS_INFO_STREAM("Mission stage 2 started.");
@@ -128,6 +129,7 @@ void GoalPublisherNode::robotOdomCallback(const nav_msgs::Odometry::ConstPtr& od
   this->world_frame_ = odom->header.frame_id;
   this->robot_frame_ = odom->child_frame_id;
   this->pose_world_robot_ = odom->pose.pose;
+  this->robot_pose_received_ = true;
 
   const tf2::Transform T_world_robot = convertPoseToTransform(this->pose_world_robot_);
   const tf2::Transform T_robot_world = T_world_robot.inverse();
@@ -188,13 +190,8 @@ void GoalPublisherNode::goalNameCallback(const std_msgs::String::ConstPtr& name)
   this->pose_world_goal_ = P_world_goal.pose;
   // Get the Transform from world to map from the tf_listener
   geometry_msgs::TransformStamped transform_map_world;
-  try
+  if (!this->tryLookupMapToWorld(transform_map_world))
   {
-    transform_map_world = this->tf2_buffer_.lookupTransform(this->map_frame_, this->world_frame_, ros::Time(0));
-  }
-  catch (tf2::TransformException& ex)
-  {
-    ROS_WARN("%s", ex.what());
     return;
   }
 
@@ -251,7 +248,7 @@ void GoalPublisherNode::planningReadyCallback(const std_msgs::Bool::ConstPtr& ms
   }
 
   // Stage 1: 先去第一个点
-  this->publishGoal(7.509763717651367, -1.0430545806884766, -M_PI/2);
+  this->publishGoal(7.515092849731445, 0.5537302494049072, -M_PI/2);
 
   this->mission_stage_ = 1;
   this->cone_open_sent_ = false;
@@ -271,6 +268,30 @@ void GoalPublisherNode::boxMarkersCallback(const visualization_msgs::MarkerArray
 
   return;
 };
+
+bool GoalPublisherNode::tryLookupMapToWorld(geometry_msgs::TransformStamped& transform_map_world)
+{
+  if (!this->tf2_buffer_.canTransform(this->map_frame_, this->world_frame_, ros::Time(0), ros::Duration(0.05)))
+  {
+    ROS_WARN_THROTTLE(
+      5.0,
+      "Waiting for TF transform from %s to %s. Set an initial pose in RViz if AMCL is running.",
+      this->map_frame_.c_str(),
+      this->world_frame_.c_str());
+    return false;
+  }
+
+  try
+  {
+    transform_map_world = this->tf2_buffer_.lookupTransform(this->map_frame_, this->world_frame_, ros::Time(0));
+    return true;
+  }
+  catch (tf2::TransformException& ex)
+  {
+    ROS_WARN_THROTTLE(5.0, "TF lookup failed: %s", ex.what());
+    return false;
+  }
+}
 
 geometry_msgs::PoseStamped GoalPublisherNode::getGoalPoseFromConfig(const std::string& name)
 {

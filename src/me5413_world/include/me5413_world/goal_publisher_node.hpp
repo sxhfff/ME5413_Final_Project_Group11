@@ -53,9 +53,11 @@ class GoalPublisherNode
   void boxMarkersCallback(const visualization_msgs::MarkerArray::ConstPtr& box_markers);
   void planningReadyCallback(const std_msgs::Bool::ConstPtr& msg);
   void publishGoal(double x, double y, double yaw);
+  bool tryLookupMapToWorld(geometry_msgs::TransformStamped& transform_map_world);
 
   bool planning_ready_;
   bool cone_open_sent_;
+  bool robot_pose_received_;
   int mission_stage_;
   double goal_reached_tolerance_;
   
