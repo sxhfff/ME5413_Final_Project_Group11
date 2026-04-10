@@ -1,0 +1,43 @@
+TrajectoryPlannerROS:
+
+  # Keep motion reasonably quick, but improve responsiveness to global path changes.
+  acc_lim_x: 6.0
+  acc_lim_theta: 12.0
+
+  max_vel_x: 0.25
+  min_vel_x: 0.08
+
+  max_vel_theta: 1.3
+  min_vel_theta: -1.3
+  min_in_place_vel_theta: 0.6
+
+  holonomic_robot: false
+  escape_vel: -0.2
+
+  yaw_goal_tolerance: 0.157
+  xy_goal_tolerance: 0.20
+  latch_xy_goal_tolerance: false
+
+  # Shorter horizon makes the controller react sooner to bends and narrow-ramp corrections.
+  sim_time: 0.7
+  sim_granularity: 0.02
+  angular_sim_granularity: 0.02
+  vx_samples: 6
+  vtheta_samples: 32
+  controller_frequency: 20.0
+
+  meter_scoring: true
+  occdist_scale: 0.35
+  pdist_scale: 1.1
+  gdist_scale: 0.5
+
+  heading_lookahead: 0.15
+  heading_scoring: false
+  heading_scoring_timestep: 0.8
+  dwa: true
+  simple_attractor: false
+  publish_cost_grid_pc: true
+
+  oscillation_reset_dist: 0.05
+  escape_reset_dist: 0.1
+  escape_reset_theta: 0.1

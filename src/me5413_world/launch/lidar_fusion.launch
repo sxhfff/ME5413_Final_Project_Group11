@@ -1,0 +1,17 @@
+<launch>
+
+  <arg name="lidar_odom_topic" default="/lidar_odom" />
+  <arg name="ekf_output_topic" default="/odometry/filtered" />
+
+  <!--
+    Local fusion only:
+    wheel odom + IMU + 3D lidar odom -> odom -> base_link
+    A separate global localization node should later provide map -> odom.
+  -->
+  <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization_3d_lidar" output="screen" clear_params="true">
+    <rosparam command="load" file="$(find me5413_world)/config/robot_localization_3d_lidar.yaml" />
+    <remap from="/lidar_odom" to="$(arg lidar_odom_topic)" />
+    <remap from="/odometry/filtered" to="$(arg ekf_output_topic)" />
+  </node>
+
+</launch>

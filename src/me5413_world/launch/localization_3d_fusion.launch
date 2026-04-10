@@ -1,0 +1,22 @@
+<launch>
+
+  <!--
+    Local 3D odometry stack:
+    /mid/points -> FLOAM -> /lidar_odom
+    /lidar_odom + /imu/data + wheel odom -> EKF -> /odometry/filtered
+  -->
+  <arg name="points_topic" default="/mid/points" />
+  <arg name="lidar_frame_id" default="velodyne" />
+  <arg name="lidar_odom_topic" default="/lidar_odom" />
+
+  <include file="$(find me5413_world)/launch/floam_jackal_odom.launch">
+    <arg name="points_topic" value="$(arg points_topic)" />
+    <arg name="lidar_frame_id" value="$(arg lidar_frame_id)" />
+    <arg name="odom_topic" value="$(arg lidar_odom_topic)" />
+  </include>
+
+  <include file="$(find me5413_world)/launch/lidar_fusion.launch">
+    <arg name="lidar_odom_topic" value="$(arg lidar_odom_topic)" />
+  </include>
+
+</launch>

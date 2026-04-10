@@ -1,0 +1,49 @@
+<launch>
+
+  <!--
+    FLOAM-based local lidar odometry for the Jackal's simulated VLP-16.
+    Output:
+    - /lidar_odom (nav_msgs/Odometry), frame odom -> velodyne
+  -->
+  <arg name="points_topic" default="/mid/points" />
+  <arg name="lidar_frame_id" default="velodyne" />
+  <arg name="odom_parent_frame_id" default="odom" />
+  <arg name="odom_topic" default="/lidar_odom" />
+
+  <!-- VLP-16 defaults -->
+  <arg name="scan_lines" default="16" />
+  <arg name="min_distance" default="0.6" />
+  <arg name="max_distance" default="20.0" />
+  <arg name="edge_threshold" default="0.05" />
+  <arg name="skip_points" default="1" />
+  <arg name="search_k" default="10" />
+  <arg name="search_radius" default="0.18" />
+  <arg name="use_exact_sync" default="true" />
+  <arg name="queue_size" default="10" />
+  <arg name="map_resolution" default="0.25" />
+
+  <!-- FLOAM's lidar node keeps points in the original lidar coordinates,
+       so keep frame_id equal to the real lidar frame. -->
+  <include file="$(find floam)/launch/floam_scanning_lidar.launch">
+    <arg name="points_topic" value="$(arg points_topic)" />
+    <arg name="frame_id" value="$(arg lidar_frame_id)" />
+    <arg name="lidar_frame_id" value="$(arg lidar_frame_id)" />
+    <arg name="max_distance" value="$(arg max_distance)" />
+    <arg name="min_distance" value="$(arg min_distance)" />
+    <arg name="edge_threshold" value="$(arg edge_threshold)" />
+    <arg name="scan_lines" value="$(arg scan_lines)" />
+    <arg name="skip_points" value="$(arg skip_points)" />
+    <arg name="search_k" value="$(arg search_k)" />
+    <arg name="search_radius" value="$(arg search_radius)" />
+  </include>
+
+  <include file="$(find floam)/launch/floam_odom.launch">
+    <arg name="frame_id" value="$(arg lidar_frame_id)" />
+    <arg name="odom_parent_frame_id" value="$(arg odom_parent_frame_id)" />
+    <arg name="use_exact_sync" value="$(arg use_exact_sync)" />
+    <arg name="queue_size" value="$(arg queue_size)" />
+    <arg name="map_resolution" value="$(arg map_resolution)" />
+    <arg name="odom_topic" value="$(arg odom_topic)" />
+  </include>
+
+</launch>

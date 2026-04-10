@@ -1,0 +1,6 @@
+image: merged_manual_v1_multifloor_nav_new.pgm
+resolution: 0.05
+origin: [-18.045525, -3.132524, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

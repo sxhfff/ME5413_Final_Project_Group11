@@ -1,0 +1,13 @@
+<launch>
+  <arg name="spawn_yaw" default="0.0" />
+
+  <!--
+    Start the simulator with the default jackal_control EKF disabled.
+    Launch lidar_fusion.launch afterwards to run the custom wheel + IMU + lidar-odom fusion.
+  -->
+  <include file="$(find me5413_world)/launch/world.launch">
+    <arg name="enable_ekf" value="false" />
+    <arg name="spawn_yaw" value="$(arg spawn_yaw)" />
+  </include>
+
+</launch>

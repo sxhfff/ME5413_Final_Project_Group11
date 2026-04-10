@@ -1,0 +1,42 @@
+TrajectoryPlannerROS:
+
+  # Conservative motion limits for ramp traversal and narrow obstacle gaps.
+  acc_lim_x: 2.0
+  acc_lim_theta: 2.5
+
+  max_vel_x: 0.35
+  min_vel_x: 0.05
+
+  max_vel_theta: 0.8
+  min_vel_theta: -0.8
+  min_in_place_vel_theta: 0.3
+
+  holonomic_robot: false
+  escape_vel: -0.05
+
+  yaw_goal_tolerance: 0.12
+  xy_goal_tolerance: 0.18
+  latch_xy_goal_tolerance: false
+
+  sim_time: 1.7
+  sim_granularity: 0.02
+  angular_sim_granularity: 0.02
+  vx_samples: 6
+  vtheta_samples: 16
+  controller_frequency: 20.0
+
+  meter_scoring: true
+  occdist_scale: 0.12
+  pdist_scale: 1.1
+  gdist_scale: 0.95
+
+  heading_lookahead: 0.3
+  heading_scoring: false
+  heading_scoring_timestep: 0.8
+  dwa: true
+  simple_attractor: false
+  publish_cost_grid_pc: true
+
+  oscillation_reset_dist: 0.06
+  escape_reset_dist: 0.15
+  escape_reset_theta: 0.15

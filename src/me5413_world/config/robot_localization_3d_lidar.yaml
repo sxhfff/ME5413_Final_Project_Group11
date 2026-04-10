@@ -1,0 +1,68 @@
+# 3D local odometry fusion for sloped, multi-floor scenes.
+# Expected inputs:
+# - /jackal_velocity_controller/odom : wheel odom
+# - /imu/data                        : IMU
+# - /lidar_odom                      : point-cloud odom from your 3D lidar frontend
+#
+# This EKF only builds a stable odom -> base_link estimate.
+# A later map-matching / global-localization stage should publish map -> odom.
+
+frequency: 50
+sensor_timeout: 0.1
+two_d_mode: false
+publish_tf: true
+publish_acceleration: false
+predict_to_current_time: true
+
+map_frame: map
+odom_frame: odom
+base_link_frame: base_link
+world_frame: odom
+
+odom0: /jackal_velocity_controller/odom
+odom0_config: [false, false, false,
+               false, false, false,
+               true,  true,  true,
+               false, false, true,
+               false, false, false]
+odom0_differential: false
+odom0_relative: false
+odom0_queue_size: 10
+
+imu0: /imu/data
+imu0_config: [false, false, false,
+              true,  true,  true,
+              false, false, false,
+              true,  true,  true,
+              true,  true,  true]
+imu0_differential: false
+imu0_relative: false
+imu0_queue_size: 20
+imu0_remove_gravitational_acceleration: true
+
+odom1: /lidar_odom
+odom1_config: [true,  true,  true,
+               true,  true,  true,
+               true,  true,  true,
+               true,  true,  true,
+               false, false, false]
+odom1_differential: false
+odom1_relative: false
+odom1_queue_size: 10
+odom1_nodelay: false
+
+process_noise_covariance: [0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                           0.0,  0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                           0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                           0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                           0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                           0.0,  0.0,  0.0,  0.0,  0.0,  0.04, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                           0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.08, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                           0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.08, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                           0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.08, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                           0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,
+                           0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,
+                           0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.04, 0.0,  0.0,  0.0,
+                           0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.2,  0.0,  0.0,
+                           0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.2,  0.0,
+                           0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.2]
