@@ -12,7 +12,7 @@
   <arg name="map_file" default="$(find me5413_world)/maps/manual_cut_direct_2d_map_v3_thick.yaml"/>
   <arg name="points_topic" default="/mid/points" />
   <arg name="lidar_frame_id" default="velodyne" />
-  <arg name="amcl_scan_topic" default="/local_obstacle_scan" />
+  <arg name="amcl_scan_topic" default="front/scan" />
   <arg name="spawn_yaw" default="0.0" />
   <arg name="initial_pose_x" default="0.0" />
   <arg name="initial_pose_y" default="0.0" />
@@ -63,6 +63,7 @@
   <!-- Launch Rviz with our settings -->
   <node type="rviz" name="rviz" pkg="rviz" args="-d $(find me5413_world)/rviz/navigation.rviz" output="log" respawn="true"/>
 
+  <node pkg="me5413_world" type="digit_recognition_service_node.py" name="digit_recognition_service_node" output="screen" />
   <node ns="me5413_world" pkg="me5413_world" type="goal_publisher_node" name="goal_publisher_node" output="screen" />
 
 </launch>

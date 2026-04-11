@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   nav_msgs
   geometry_msgs
+  std_srvs
   visualization_msgs
   tf2
   tf2_ros
@@ -31,6 +32,7 @@ catkin_package(
 
 catkin_install_python(PROGRAMS
   scripts/pointcloud_to_scan_node.py
+  src/digit_recognition_service_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
