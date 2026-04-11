@@ -24,6 +24,7 @@
 #include <std_msgs/Float32.h>
 #include <gazebo_msgs/ModelStates.h>
 #include <nav_msgs/Odometry.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TransformStamped.h>
@@ -54,7 +55,8 @@ class GoalPublisherNode
     NAVIGATING_TO_FIRST = 2,
     NAVIGATING_TO_SECOND = 3,
     NAVIGATING_TO_INTERMEDIATE = 4,
-    NAVIGATING_TO_THIRD = 5,
+    NAVIGATING_TO_PRE_FINAL = 5,
+    NAVIGATING_TO_THIRD = 6,
   };
 
   void timerCallback(const ros::TimerEvent&);
@@ -64,11 +66,14 @@ class GoalPublisherNode
   void boxMarkersCallback(const visualization_msgs::MarkerArray::ConstPtr& box_markers);
   void modelStatesCallback(const gazebo_msgs::ModelStates::ConstPtr& model_states);
   void respawnObjectsCallback(const std_msgs::Int16::ConstPtr& respawn_msg);
+  void occupancyGridCallback(const nav_msgs::OccupancyGrid::ConstPtr& map_msg);
   
   tf2::Transform convertPoseToTransform(const geometry_msgs::Pose& pose);
   geometry_msgs::PoseStamped getGoalPoseFromConfig(const std::string& name);
   std::pair<double, double> calculatePoseError(const geometry_msgs::Pose& pose_robot, const geometry_msgs::Pose& pose_goal);
   bool updateRobotPoseInMap();
+  bool isPointOccupiedInMap(const geometry_msgs::Point& point) const;
+  bool selectPreFinalGoal(geometry_msgs::PoseStamped* selected_goal, std::string* selected_label) const;
   void publishAutoGoal(const geometry_msgs::PoseStamped& goal, const std::string& label);
   double calculatePlanarDistance(const geometry_msgs::Pose& pose_robot, const geometry_msgs::Pose& pose_goal) const;
 
@@ -89,6 +94,7 @@ class GoalPublisherNode
   ros::Subscriber sub_box_markers_;
   ros::Subscriber sub_model_states_;
   ros::Subscriber sub_respawn_objects_;
+  ros::Subscriber sub_occupancy_grid_;
 
   tf2_ros::Buffer tf2_buffer_;
   tf2_ros::TransformListener tf2_listener_;
@@ -108,7 +114,11 @@ class GoalPublisherNode
   geometry_msgs::PoseStamped auto_goal_1_;
   geometry_msgs::PoseStamped auto_goal_2_;
   geometry_msgs::PoseStamped auto_goal_intermediate_;
+  geometry_msgs::PoseStamped auto_goal_pre_final_candidate_1_;
+  geometry_msgs::PoseStamped auto_goal_pre_final_candidate_2_;
+  geometry_msgs::PoseStamped auto_goal_pre_final_selected_;
   geometry_msgs::PoseStamped auto_goal_3_;
+  nav_msgs::OccupancyGrid latest_map_;
 
   std_msgs::Float32 absolute_position_error_;
   std_msgs::Float32 absolute_heading_error_;
@@ -122,6 +132,7 @@ class GoalPublisherNode
   bool has_cone_model_;
   bool has_random_cone_model_;
   int spawned_number_model_count_;
+  bool has_latest_map_;
 };
 
 } // namespace me5413_world
