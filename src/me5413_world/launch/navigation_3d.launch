@@ -63,7 +63,24 @@
   <!-- Launch Rviz with our settings -->
   <node type="rviz" name="rviz" pkg="rviz" args="-d $(find me5413_world)/rviz/navigation.rviz" output="log" respawn="true"/>
 
-  <node pkg="me5413_world" type="digit_recognition_service_node.py" name="digit_recognition_service_node" output="screen" />
+  <node pkg="me5413_world" type="digit_recognition_service_node.py" name="digit_recognition_service_node" output="screen" >
+    <param name="image_topic" value="/front/image_raw" />
+    <param name="vote_rate_hz" value="8.0" />
+    <param name="ocr_min_score" value="0.45" />
+    <param name="roi_x_margin_ratio" value="0.10" />
+    <param name="roi_y_margin_ratio" value="0.12" />
+    <param name="min_area_ratio" value="0.0008" />
+    <param name="max_area_ratio" value="0.22" />
+    <param name="min_aspect_ratio" value="0.45" />
+    <param name="max_aspect_ratio" value="1.75" />
+    <param name="max_center_offset_ratio" value="0.38" />
+    <param name="max_candidates" value="6" />
+    <param name="candidate_padding_ratio" value="0.10" />
+    <param name="candidate_iou_threshold" value="0.35" />
+    <param name="consensus_min_detections" value="3" />
+    <param name="consensus_min_avg_score" value="0.45" />
+    <param name="consensus_min_max_score" value="0.55" />
+  </node>
   <node ns="me5413_world" pkg="me5413_world" type="goal_publisher_node" name="goal_publisher_node" output="screen" />
 
 </launch>

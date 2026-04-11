@@ -26,6 +26,7 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->pub_absolute_heading_error_ = nh_.advertise<std_msgs::Float32>("/me5413_world/absolute/heading_error", 1);
   this->pub_relative_position_error_ = nh_.advertise<std_msgs::Float32>("/me5413_world/relative/position_error", 1);
   this->pub_relative_heading_error_ = nh_.advertise<std_msgs::Float32>("/me5413_world/relative/heading_error", 1);
+  this->pub_initialpose_ = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("/initialpose", 1);
 
   this->timer_ = nh_.createTimer(ros::Duration(0.2), &GoalPublisherNode::timerCallback, this);
   this->sub_robot_odom_ = nh_.subscribe("/gazebo/ground_truth/state", 1, &GoalPublisherNode::robotOdomCallback, this);
@@ -36,6 +37,7 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->sub_respawn_objects_ = nh_.subscribe("/rviz_panel/respawn_objects", 1, &GoalPublisherNode::respawnObjectsCallback, this);
   this->sub_expected_digit_ = nh_.subscribe("/me5413_world/expected_digit", 1, &GoalPublisherNode::expectedDigitCallback, this);
   this->sub_costmap_ = nh_.subscribe("/move_base/global_costmap/costmap", 1, &GoalPublisherNode::costmapCallback, this);
+  this->sub_amcl_pose_ = nh_.subscribe("/amcl_pose", 1, &GoalPublisherNode::amclPoseCallback, this);
   this->start_recognition_client_ = nh_.serviceClient<std_srvs::Trigger>("/start_recognition");
   this->stop_recognition_client_ = nh_.serviceClient<std_srvs::Trigger>("/stop_recognition");
   
@@ -56,6 +58,7 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->has_random_cone_model_ = false;
   this->spawned_number_model_count_ = 0;
   this->has_costmap_ = false;
+  this->has_amcl_pose_ = false;
   this->has_random_cone_pose_ = false;
   this->random_cone_world_y_ = 0.0;
   this->random_cone_positive_y_is_first_location_ = false;
@@ -67,7 +70,13 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->expected_digit_ = -1;
   this->has_expected_digit_ = false;
   this->current_inspection_goal_idx_ = 0;
+  this->current_top_corridor_waypoint_idx_ = 0;
   this->last_recognition_failure_reason_ = "UNSET";
+  this->relocalize_every_n_waypoints_ = 1;
+  this->relocalize_position_only_at_waypoints_ = true;
+  this->relocalize_max_distance_m_ = 0.75;
+  this->relocalize_max_yaw_error_rad_ = M_PI;
+  this->reached_original_waypoint_count_ = 0;
 
   nh_.param("pre_final_occupancy_check_radius_m", this->occupancy_check_radius_m_, this->occupancy_check_radius_m_);
   nh_.param("random_cone_positive_y_is_first_location",
@@ -85,6 +94,18 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   nh_.param("pre_final_occupancy_unknown_ratio_threshold",
             this->occupancy_check_unknown_ratio_threshold_,
             this->occupancy_check_unknown_ratio_threshold_);
+  nh_.param("relocalize_every_n_waypoints",
+            this->relocalize_every_n_waypoints_,
+            this->relocalize_every_n_waypoints_);
+  nh_.param("relocalize_position_only_at_waypoints",
+            this->relocalize_position_only_at_waypoints_,
+            this->relocalize_position_only_at_waypoints_);
+  nh_.param("relocalize_max_distance_m",
+            this->relocalize_max_distance_m_,
+            this->relocalize_max_distance_m_);
+  nh_.param("relocalize_max_yaw_error_rad",
+            this->relocalize_max_yaw_error_rad_,
+            this->relocalize_max_yaw_error_rad_);
 
   this->auto_goal_1_.header.frame_id = this->map_frame_;
   this->auto_goal_1_.pose.position.x = 1.7331511974334717;
@@ -105,6 +126,33 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->auto_goal_intermediate_.pose.orientation.z = -0.70710678;
   this->auto_goal_intermediate_.pose.orientation.w = 0.70710678;
 
+  this->top_corridor_waypoints_.clear();
+  this->top_corridor_waypoints_.resize(4);
+
+  this->top_corridor_waypoints_[0].header.frame_id = this->map_frame_;
+  this->top_corridor_waypoints_[0].pose.position.x = -0.8848695755004883;
+  this->top_corridor_waypoints_[0].pose.position.y = 40.73491287231445;
+  this->top_corridor_waypoints_[0].pose.position.z = 0.0040435791015625;
+  this->top_corridor_waypoints_[0].pose.orientation = this->auto_goal_intermediate_.pose.orientation;
+
+  this->top_corridor_waypoints_[1].header.frame_id = this->map_frame_;
+  this->top_corridor_waypoints_[1].pose.position.x = -5.090004920959473;
+  this->top_corridor_waypoints_[1].pose.position.y = 40.69736862182617;
+  this->top_corridor_waypoints_[1].pose.position.z = 0.004016876220703125;
+  this->top_corridor_waypoints_[1].pose.orientation = this->auto_goal_intermediate_.pose.orientation;
+
+  this->top_corridor_waypoints_[2].header.frame_id = this->map_frame_;
+  this->top_corridor_waypoints_[2].pose.position.x = -9.589505195617676;
+  this->top_corridor_waypoints_[2].pose.position.y = 40.88093948364258;
+  this->top_corridor_waypoints_[2].pose.position.z = 0.003368377685546875;
+  this->top_corridor_waypoints_[2].pose.orientation = this->auto_goal_intermediate_.pose.orientation;
+
+  this->top_corridor_waypoints_[3].header.frame_id = this->map_frame_;
+  this->top_corridor_waypoints_[3].pose.position.x = -12.577373504638672;
+  this->top_corridor_waypoints_[3].pose.position.y = 40.731353759765625;
+  this->top_corridor_waypoints_[3].pose.position.z = 0.000732421875;
+  this->top_corridor_waypoints_[3].pose.orientation = this->auto_goal_intermediate_.pose.orientation;
+
   this->auto_goal_3_.header.frame_id = this->map_frame_;
   this->auto_goal_3_.pose.position.x = -7.284735679626465;
   this->auto_goal_3_.pose.position.y = 30.505300521850586;
@@ -114,6 +162,8 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
 
   this->inspection_goals_.clear();
   this->inspection_goals_.resize(4);
+  this->matched_target_goals_.clear();
+  this->matched_target_goals_.resize(4);
 
   this->inspection_goals_[0].header.frame_id = this->map_frame_;
   this->inspection_goals_[0].pose.position.x = 0.25649595260620117;
@@ -139,6 +189,30 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->inspection_goals_[3].pose.position.z = 0.2837066650390625;
   this->inspection_goals_[3].pose.orientation = this->auto_goal_3_.pose.orientation;
 
+  this->matched_target_goals_[0].header.frame_id = this->map_frame_;
+  this->matched_target_goals_[0].pose.position.x = 0.2006993293762207;
+  this->matched_target_goals_[0].pose.position.y = 25.67626953125;
+  this->matched_target_goals_[0].pose.position.z = 0.00769805908203125;
+  this->matched_target_goals_[0].pose.orientation = this->auto_goal_3_.pose.orientation;
+
+  this->matched_target_goals_[1].header.frame_id = this->map_frame_;
+  this->matched_target_goals_[1].pose.position.x = -4.731289863586426;
+  this->matched_target_goals_[1].pose.position.y = 25.749753952026367;
+  this->matched_target_goals_[1].pose.position.z = 0.007770538330078125;
+  this->matched_target_goals_[1].pose.orientation = this->auto_goal_3_.pose.orientation;
+
+  this->matched_target_goals_[2].header.frame_id = this->map_frame_;
+  this->matched_target_goals_[2].pose.position.x = -9.826406478881836;
+  this->matched_target_goals_[2].pose.position.y = 25.749576568603516;
+  this->matched_target_goals_[2].pose.position.z = 0.006351470947265625;
+  this->matched_target_goals_[2].pose.orientation = this->auto_goal_3_.pose.orientation;
+
+  this->matched_target_goals_[3].header.frame_id = this->map_frame_;
+  this->matched_target_goals_[3].pose.position.x = -14.652506828308105;
+  this->matched_target_goals_[3].pose.position.y = 25.839962005615234;
+  this->matched_target_goals_[3].pose.position.z = 0.00304412841796875;
+  this->matched_target_goals_[3].pose.orientation = this->auto_goal_3_.pose.orientation;
+
   this->auto_goal_intermediate_candidate_1_.header.frame_id = this->map_frame_;
   this->auto_goal_intermediate_candidate_1_.pose.position.x = -2.184358835220337;
   this->auto_goal_intermediate_candidate_1_.pose.position.y = 34.08659744262695;
@@ -152,6 +226,7 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->auto_goal_intermediate_candidate_2_.pose.orientation = this->auto_goal_3_.pose.orientation;
 
   this->auto_goal_pre_final_selected_ = this->inspection_goals_[0];
+  this->matched_target_goal_ = this->matched_target_goals_[0];
 };
 
 void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
@@ -173,6 +248,7 @@ void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
     if (position_error <= this->auto_goal_tolerance_ &&
         heading_error_deg <= this->auto_goal_heading_tolerance_deg_)
     {
+      maybeRelocalizeAtWaypoint(this->auto_goal_1_, "first");
       std_msgs::Bool unblock_msg;
       unblock_msg.data = true;
       this->pub_unblock_.publish(unblock_msg);
@@ -185,14 +261,46 @@ void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
   {
     if (calculatePlanarDistance(this->pose_map_robot_, this->auto_goal_2_.pose) <= this->auto_goal_tolerance_)
     {
-      publishAutoGoal(this->auto_goal_intermediate_, "intermediate");
-      this->auto_sequence_state_ = NAVIGATING_TO_INTERMEDIATE;
+      maybeRelocalizeAtWaypoint(this->auto_goal_2_, "second");
+      if (!this->top_corridor_waypoints_.empty())
+      {
+        this->current_top_corridor_waypoint_idx_ = 0;
+        publishAutoGoal(this->top_corridor_waypoints_[this->current_top_corridor_waypoint_idx_],
+                        "top_corridor_1");
+        this->auto_sequence_state_ = NAVIGATING_TO_TOP_CORRIDOR_WAYPOINTS;
+      }
+      else
+      {
+        publishAutoGoal(this->auto_goal_intermediate_, "intermediate");
+        this->auto_sequence_state_ = NAVIGATING_TO_INTERMEDIATE;
+      }
+    }
+  }
+  else if (this->auto_sequence_state_ == NAVIGATING_TO_TOP_CORRIDOR_WAYPOINTS && has_map_pose)
+  {
+    const auto& current_waypoint = this->top_corridor_waypoints_[this->current_top_corridor_waypoint_idx_];
+    if (calculatePlanarDistance(this->pose_map_robot_, current_waypoint.pose) <= this->auto_goal_tolerance_)
+    {
+      maybeRelocalizeAtWaypoint(current_waypoint,
+                                "top_corridor_" + std::to_string(this->current_top_corridor_waypoint_idx_ + 1));
+      if (this->current_top_corridor_waypoint_idx_ + 1 < this->top_corridor_waypoints_.size())
+      {
+        ++this->current_top_corridor_waypoint_idx_;
+        publishAutoGoal(this->top_corridor_waypoints_[this->current_top_corridor_waypoint_idx_],
+                        "top_corridor_" + std::to_string(this->current_top_corridor_waypoint_idx_ + 1));
+      }
+      else
+      {
+        publishAutoGoal(this->auto_goal_intermediate_, "intermediate");
+        this->auto_sequence_state_ = NAVIGATING_TO_INTERMEDIATE;
+      }
     }
   }
   else if (this->auto_sequence_state_ == NAVIGATING_TO_INTERMEDIATE && has_map_pose)
   {
     if (calculatePlanarDistance(this->pose_map_robot_, this->auto_goal_intermediate_.pose) <= this->auto_goal_tolerance_)
     {
+      maybeRelocalizeAtWaypoint(this->auto_goal_intermediate_, "intermediate");
       this->auto_goal_pre_final_selected_ = choosePreFinalGoal();
       publishAutoGoal(this->auto_goal_pre_final_selected_, "pre-final");
       this->auto_sequence_state_ = NAVIGATING_TO_PRE_FINAL;
@@ -202,6 +310,7 @@ void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
   {
     if (calculatePlanarDistance(this->pose_map_robot_, this->auto_goal_pre_final_selected_.pose) <= this->auto_goal_tolerance_)
     {
+      maybeRelocalizeAtWaypoint(this->auto_goal_pre_final_selected_, "pre-final");
       this->current_inspection_goal_idx_ = 0;
       this->auto_goal_pre_final_selected_ = this->inspection_goals_[this->current_inspection_goal_idx_];
       publishAutoGoal(this->auto_goal_pre_final_selected_, "inspection_1");
@@ -217,10 +326,17 @@ void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
     if (position_error <= this->auto_goal_tolerance_ &&
         heading_error_deg <= this->auto_goal_heading_tolerance_deg_)
     {
+      maybeRelocalizeAtWaypoint(this->auto_goal_pre_final_selected_,
+                                "inspection_" + std::to_string(this->current_inspection_goal_idx_ + 1));
       if (runDigitRecognitionAndCheckMatch())
       {
-        this->auto_sequence_state_ = IDLE;
-        ROS_INFO_STREAM("Matched successfully.");
+        this->matched_target_goal_ = this->matched_target_goals_[this->current_inspection_goal_idx_];
+        publishAutoGoal(this->matched_target_goal_,
+                        "matched_target_" + std::to_string(this->current_inspection_goal_idx_ + 1));
+        this->auto_sequence_state_ = NAVIGATING_TO_MATCHED_TARGET;
+        ROS_INFO_STREAM("Matched successfully at inspection point "
+                        << (this->current_inspection_goal_idx_ + 1)
+                        << ". Navigating to matched target goal.");
       }
       else if (this->current_inspection_goal_idx_ + 1 < this->inspection_goals_.size())
       {
@@ -238,6 +354,22 @@ void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
         ROS_WARN_STREAM("No match found after all four inspection points. Last reason="
                         << this->last_recognition_failure_reason_ << ".");
       }
+    }
+  }
+  else if (this->auto_sequence_state_ == NAVIGATING_TO_MATCHED_TARGET && has_map_pose)
+  {
+    const double position_error =
+      calculatePlanarDistance(this->pose_map_robot_, this->matched_target_goal_.pose);
+    const double heading_error_deg =
+      std::abs(calculatePoseError(this->pose_map_robot_, this->matched_target_goal_.pose).second);
+    if (position_error <= this->auto_goal_tolerance_ &&
+        heading_error_deg <= this->auto_goal_heading_tolerance_deg_)
+    {
+      maybeRelocalizeAtWaypoint(this->matched_target_goal_,
+                                "matched_target_" + std::to_string(this->current_inspection_goal_idx_ + 1));
+      this->auto_sequence_state_ = IDLE;
+      ROS_INFO_STREAM("Reached matched target goal for inspection point "
+                      << (this->current_inspection_goal_idx_ + 1) << ".");
     }
   }
   // Calculate absolute errors (wrt to world frame)
@@ -385,6 +517,12 @@ void GoalPublisherNode::costmapCallback(const nav_msgs::OccupancyGrid::ConstPtr&
 {
   this->latest_costmap_ = *costmap;
   this->has_costmap_ = true;
+}
+
+void GoalPublisherNode::amclPoseCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& amcl_pose_msg)
+{
+  this->pose_amcl_robot_ = amcl_pose_msg->pose.pose;
+  this->has_amcl_pose_ = true;
 }
 
 tf2::Transform GoalPublisherNode::convertPoseToTransform(const geometry_msgs::Pose& pose)
@@ -745,6 +883,180 @@ double GoalPublisherNode::calculatePlanarDistance(const geometry_msgs::Pose& pos
     std::pow(pose_robot.position.x - pose_goal.position.x, 2) +
     std::pow(pose_robot.position.y - pose_goal.position.y, 2)
   );
+}
+
+bool GoalPublisherNode::maybeRelocalizeAtWaypoint(const geometry_msgs::PoseStamped& waypoint, const std::string& label)
+{
+  ++this->reached_original_waypoint_count_;
+
+  if (this->relocalize_every_n_waypoints_ <= 0)
+  {
+    return false;
+  }
+
+  if ((this->reached_original_waypoint_count_ % this->relocalize_every_n_waypoints_) != 0)
+  {
+    return false;
+  }
+
+  if (!this->has_amcl_pose_)
+  {
+    ROS_WARN_STREAM("Skipped relocalization at " << label << ": no /amcl_pose received yet.");
+    return false;
+  }
+
+  double room_min_x = 0.0;
+  double room_max_x = 0.0;
+  double room_min_y = 0.0;
+  double room_max_y = 0.0;
+  std::string waypoint_room;
+  if (!getRoomBoundsForPose(waypoint.pose, &room_min_x, &room_max_x, &room_min_y, &room_max_y, &waypoint_room))
+  {
+    ROS_WARN_STREAM("Skipped relocalization at " << label << ": waypoint is outside preset rooms.");
+    return false;
+  }
+
+  std::string current_room;
+  if (!getRoomBoundsForPose(this->pose_amcl_robot_,
+                            &room_min_x,
+                            &room_max_x,
+                            &room_min_y,
+                            &room_max_y,
+                            &current_room))
+  {
+    ROS_WARN_STREAM("Skipped relocalization at " << label << ": current AMCL pose is outside preset rooms.");
+    return false;
+  }
+
+  if (current_room != waypoint_room)
+  {
+    ROS_WARN_STREAM("Skipped relocalization at " << label << ": cross-room correction disallowed (current="
+                    << current_room << ", waypoint=" << waypoint_room << ").");
+    return false;
+  }
+
+  const double distance_error = calculatePlanarDistance(this->pose_amcl_robot_, waypoint.pose);
+  if (distance_error > this->relocalize_max_distance_m_)
+  {
+    ROS_WARN_STREAM("Skipped relocalization at " << label << ": AMCL distance error "
+                    << distance_error << " m exceeds limit " << this->relocalize_max_distance_m_ << " m.");
+    return false;
+  }
+
+  const double current_yaw = getYawFromPose(this->pose_amcl_robot_);
+  const double waypoint_yaw = getYawFromPose(waypoint.pose);
+  const double yaw_delta = std::atan2(std::sin(current_yaw - waypoint_yaw),
+                                      std::cos(current_yaw - waypoint_yaw));
+  const double yaw_error = std::abs(yaw_delta);
+  if (yaw_error > this->relocalize_max_yaw_error_rad_)
+  {
+    ROS_WARN_STREAM("Skipped relocalization at " << label << ": yaw error "
+                    << yaw_error << " rad exceeds limit " << this->relocalize_max_yaw_error_rad_ << " rad.");
+    return false;
+  }
+
+  geometry_msgs::PoseWithCovarianceStamped initialpose_msg;
+  initialpose_msg.header.stamp = ros::Time::now();
+  initialpose_msg.header.frame_id = this->map_frame_;
+  initialpose_msg.pose.pose = waypoint.pose;
+  if (this->relocalize_position_only_at_waypoints_)
+  {
+    initialpose_msg.pose.pose.orientation = this->pose_amcl_robot_.orientation;
+  }
+
+  for (double& value : initialpose_msg.pose.covariance)
+  {
+    value = 0.0;
+  }
+  initialpose_msg.pose.covariance[0] = 0.05;
+  initialpose_msg.pose.covariance[7] = 0.05;
+  initialpose_msg.pose.covariance[35] = 0.10;
+
+  this->pub_initialpose_.publish(initialpose_msg);
+  ROS_INFO_STREAM("Published /initialpose relocalization at " << label
+                  << " in room " << waypoint_room
+                  << " (position_only="
+                  << (this->relocalize_position_only_at_waypoints_ ? "true" : "false")
+                  << ").");
+  return true;
+}
+
+bool GoalPublisherNode::getRoomBoundsForPose(const geometry_msgs::Pose& pose,
+                                             double* min_x,
+                                             double* max_x,
+                                             double* min_y,
+                                             double* max_y,
+                                             std::string* room_name) const
+{
+  struct RoomBounds
+  {
+    const char* name;
+    double min_x;
+    double max_x;
+    double min_y;
+    double max_y;
+  };
+
+  static const std::vector<RoomBounds> kRooms = {
+    {"start_room", -1.5, 4.5, 5.0, 10.5},
+    {"top_corridor", -17.0, 5.5, 38.0, 43.5},
+    {"pre_final_zone", -17.5, 1.5, 32.0, 36.5},
+    {"inspection_corridor", -16.5, 1.5, 29.0, 31.5},
+    {"matched_corridor", -16.5, 1.5, 24.5, 26.8},
+  };
+
+  for (const auto& room : kRooms)
+  {
+    if (isPoseInsideRoom(pose, room.min_x, room.max_x, room.min_y, room.max_y))
+    {
+      if (min_x != nullptr)
+      {
+        *min_x = room.min_x;
+      }
+      if (max_x != nullptr)
+      {
+        *max_x = room.max_x;
+      }
+      if (min_y != nullptr)
+      {
+        *min_y = room.min_y;
+      }
+      if (max_y != nullptr)
+      {
+        *max_y = room.max_y;
+      }
+      if (room_name != nullptr)
+      {
+        *room_name = room.name;
+      }
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool GoalPublisherNode::isPoseInsideRoom(const geometry_msgs::Pose& pose,
+                                         double min_x,
+                                         double max_x,
+                                         double min_y,
+                                         double max_y) const
+{
+  return pose.position.x >= min_x &&
+         pose.position.x <= max_x &&
+         pose.position.y >= min_y &&
+         pose.position.y <= max_y;
+}
+
+double GoalPublisherNode::getYawFromPose(const geometry_msgs::Pose& pose) const
+{
+  tf2::Quaternion q;
+  tf2::fromMsg(pose.orientation, q);
+  double roll = 0.0;
+  double pitch = 0.0;
+  double yaw = 0.0;
+  tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+  return yaw;
 }
 
 } // namespace me5413_world
