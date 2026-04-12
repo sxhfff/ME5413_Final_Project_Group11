@@ -27,6 +27,7 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->pub_relative_position_error_ = nh_.advertise<std_msgs::Float32>("/me5413_world/relative/position_error", 1);
   this->pub_relative_heading_error_ = nh_.advertise<std_msgs::Float32>("/me5413_world/relative/heading_error", 1);
   this->pub_initialpose_ = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("/initialpose", 1);
+  this->pub_auto_sequence_state_ = nh_.advertise<std_msgs::Int16>("/me5413_world/auto_sequence_state", 1, true);
 
   this->timer_ = nh_.createTimer(ros::Duration(0.2), &GoalPublisherNode::timerCallback, this);
   this->sub_robot_odom_ = nh_.subscribe("/gazebo/ground_truth/state", 1, &GoalPublisherNode::robotOdomCallback, this);
@@ -36,6 +37,7 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->sub_model_states_ = nh_.subscribe("/gazebo/model_states", 1, &GoalPublisherNode::modelStatesCallback, this);
   this->sub_respawn_objects_ = nh_.subscribe("/rviz_panel/respawn_objects", 1, &GoalPublisherNode::respawnObjectsCallback, this);
   this->sub_expected_digit_ = nh_.subscribe("/me5413_world/expected_digit", 1, &GoalPublisherNode::expectedDigitCallback, this);
+  this->sub_start_auto_sequence_ = nh_.subscribe("/me5413_world/start_auto_sequence", 1, &GoalPublisherNode::startAutoSequenceCallback, this);
   this->sub_costmap_ = nh_.subscribe("/move_base/global_costmap/costmap", 1, &GoalPublisherNode::costmapCallback, this);
   this->sub_amcl_pose_ = nh_.subscribe("/amcl_pose", 1, &GoalPublisherNode::amclPoseCallback, this);
   this->start_recognition_client_ = nh_.serviceClient<std_srvs::Trigger>("/start_recognition");
@@ -52,6 +54,8 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->auto_sequence_state_ = IDLE;
   this->auto_goal_tolerance_ = 0.75;
   this->auto_goal_heading_tolerance_deg_ = 15.0;
+  this->first_auto_goal_heading_tolerance_deg_ = 45.0;
+  this->auto_sequence_start_position_tolerance_m_ = 2.0;
   this->respawn_models_ready_ = false;
   this->pre_final_selection_preview_logged_ = false;
   this->has_cone_model_ = false;
@@ -70,7 +74,6 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->expected_digit_ = -1;
   this->has_expected_digit_ = false;
   this->current_inspection_goal_idx_ = 0;
-  this->current_top_corridor_waypoint_idx_ = 0;
   this->last_recognition_failure_reason_ = "UNSET";
   this->relocalize_every_n_waypoints_ = 1;
   this->relocalize_position_only_at_waypoints_ = true;
@@ -106,6 +109,18 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   nh_.param("relocalize_max_yaw_error_rad",
             this->relocalize_max_yaw_error_rad_,
             this->relocalize_max_yaw_error_rad_);
+  nh_.param("auto_sequence_start_position_tolerance_m",
+            this->auto_sequence_start_position_tolerance_m_,
+            this->auto_sequence_start_position_tolerance_m_);
+  nh_.param("first_auto_goal_heading_tolerance_deg",
+            this->first_auto_goal_heading_tolerance_deg_,
+            this->first_auto_goal_heading_tolerance_deg_);
+
+  this->auto_sequence_handoff_pose_.header.frame_id = this->map_frame_;
+  this->auto_sequence_handoff_pose_.pose.position.x = 1.51;
+  this->auto_sequence_handoff_pose_.pose.position.y = 6.15;
+  this->auto_sequence_handoff_pose_.pose.position.z = 0.0;
+  this->auto_sequence_handoff_pose_.pose.orientation.w = 1.0;
 
   this->auto_goal_1_.header.frame_id = this->map_frame_;
   this->auto_goal_1_.pose.position.x = 1.7331511974334717;
@@ -125,33 +140,6 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
   this->auto_goal_intermediate_.pose.position.z = 0.0074310302734375;
   this->auto_goal_intermediate_.pose.orientation.z = -0.70710678;
   this->auto_goal_intermediate_.pose.orientation.w = 0.70710678;
-
-  this->top_corridor_waypoints_.clear();
-  this->top_corridor_waypoints_.resize(4);
-
-  this->top_corridor_waypoints_[0].header.frame_id = this->map_frame_;
-  this->top_corridor_waypoints_[0].pose.position.x = -0.8848695755004883;
-  this->top_corridor_waypoints_[0].pose.position.y = 40.73491287231445;
-  this->top_corridor_waypoints_[0].pose.position.z = 0.0040435791015625;
-  this->top_corridor_waypoints_[0].pose.orientation = this->auto_goal_intermediate_.pose.orientation;
-
-  this->top_corridor_waypoints_[1].header.frame_id = this->map_frame_;
-  this->top_corridor_waypoints_[1].pose.position.x = -5.090004920959473;
-  this->top_corridor_waypoints_[1].pose.position.y = 40.69736862182617;
-  this->top_corridor_waypoints_[1].pose.position.z = 0.004016876220703125;
-  this->top_corridor_waypoints_[1].pose.orientation = this->auto_goal_intermediate_.pose.orientation;
-
-  this->top_corridor_waypoints_[2].header.frame_id = this->map_frame_;
-  this->top_corridor_waypoints_[2].pose.position.x = -9.589505195617676;
-  this->top_corridor_waypoints_[2].pose.position.y = 40.88093948364258;
-  this->top_corridor_waypoints_[2].pose.position.z = 0.003368377685546875;
-  this->top_corridor_waypoints_[2].pose.orientation = this->auto_goal_intermediate_.pose.orientation;
-
-  this->top_corridor_waypoints_[3].header.frame_id = this->map_frame_;
-  this->top_corridor_waypoints_[3].pose.position.x = -12.577373504638672;
-  this->top_corridor_waypoints_[3].pose.position.y = 40.731353759765625;
-  this->top_corridor_waypoints_[3].pose.position.z = 0.000732421875;
-  this->top_corridor_waypoints_[3].pose.orientation = this->auto_goal_intermediate_.pose.orientation;
 
   this->auto_goal_3_.header.frame_id = this->map_frame_;
   this->auto_goal_3_.pose.position.x = -7.284735679626465;
@@ -227,11 +215,13 @@ GoalPublisherNode::GoalPublisherNode() : tf2_listener_(tf2_buffer_)
 
   this->auto_goal_pre_final_selected_ = this->inspection_goals_[0];
   this->matched_target_goal_ = this->matched_target_goals_[0];
+  publishAutoSequenceState();
 };
 
 void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
 {
   const bool has_map_pose = updateRobotPoseInMap();
+  publishAutoSequenceState();
 
   if (this->auto_sequence_state_ == WAITING_FOR_RESPAWN)
   {
@@ -246,7 +236,7 @@ void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
     const double position_error = calculatePlanarDistance(this->pose_map_robot_, this->auto_goal_1_.pose);
     const double heading_error_deg = std::abs(calculatePoseError(this->pose_map_robot_, this->auto_goal_1_.pose).second);
     if (position_error <= this->auto_goal_tolerance_ &&
-        heading_error_deg <= this->auto_goal_heading_tolerance_deg_)
+        heading_error_deg <= this->first_auto_goal_heading_tolerance_deg_)
     {
       maybeRelocalizeAtWaypoint(this->auto_goal_1_, "first");
       std_msgs::Bool unblock_msg;
@@ -262,38 +252,8 @@ void GoalPublisherNode::timerCallback(const ros::TimerEvent&)
     if (calculatePlanarDistance(this->pose_map_robot_, this->auto_goal_2_.pose) <= this->auto_goal_tolerance_)
     {
       maybeRelocalizeAtWaypoint(this->auto_goal_2_, "second");
-      if (!this->top_corridor_waypoints_.empty())
-      {
-        this->current_top_corridor_waypoint_idx_ = 0;
-        publishAutoGoal(this->top_corridor_waypoints_[this->current_top_corridor_waypoint_idx_],
-                        "top_corridor_1");
-        this->auto_sequence_state_ = NAVIGATING_TO_TOP_CORRIDOR_WAYPOINTS;
-      }
-      else
-      {
-        publishAutoGoal(this->auto_goal_intermediate_, "intermediate");
-        this->auto_sequence_state_ = NAVIGATING_TO_INTERMEDIATE;
-      }
-    }
-  }
-  else if (this->auto_sequence_state_ == NAVIGATING_TO_TOP_CORRIDOR_WAYPOINTS && has_map_pose)
-  {
-    const auto& current_waypoint = this->top_corridor_waypoints_[this->current_top_corridor_waypoint_idx_];
-    if (calculatePlanarDistance(this->pose_map_robot_, current_waypoint.pose) <= this->auto_goal_tolerance_)
-    {
-      maybeRelocalizeAtWaypoint(current_waypoint,
-                                "top_corridor_" + std::to_string(this->current_top_corridor_waypoint_idx_ + 1));
-      if (this->current_top_corridor_waypoint_idx_ + 1 < this->top_corridor_waypoints_.size())
-      {
-        ++this->current_top_corridor_waypoint_idx_;
-        publishAutoGoal(this->top_corridor_waypoints_[this->current_top_corridor_waypoint_idx_],
-                        "top_corridor_" + std::to_string(this->current_top_corridor_waypoint_idx_ + 1));
-      }
-      else
-      {
-        publishAutoGoal(this->auto_goal_intermediate_, "intermediate");
-        this->auto_sequence_state_ = NAVIGATING_TO_INTERMEDIATE;
-      }
+      publishAutoGoal(this->auto_goal_intermediate_, "intermediate");
+      this->auto_sequence_state_ = NAVIGATING_TO_INTERMEDIATE;
     }
   }
   else if (this->auto_sequence_state_ == NAVIGATING_TO_INTERMEDIATE && has_map_pose)
@@ -511,6 +471,17 @@ void GoalPublisherNode::expectedDigitCallback(const std_msgs::Int16::ConstPtr& e
   this->expected_digit_ = expected_digit_msg->data;
   this->has_expected_digit_ = true;
   ROS_INFO_STREAM("Received expected digit: " << this->expected_digit_);
+}
+
+void GoalPublisherNode::startAutoSequenceCallback(const std_msgs::Bool::ConstPtr& start_msg)
+{
+  if (!start_msg->data)
+  {
+    ROS_INFO_STREAM("Ignoring false /me5413_world/start_auto_sequence trigger.");
+    return;
+  }
+
+  startAutoSequenceIfReady("me5413_world/start_auto_sequence");
 }
 
 void GoalPublisherNode::costmapCallback(const nav_msgs::OccupancyGrid::ConstPtr& costmap)
@@ -851,6 +822,58 @@ void GoalPublisherNode::publishAutoGoal(const geometry_msgs::PoseStamped& goal, 
   ROS_INFO_STREAM("Published " << label << " auto goal at ("
                   << goal_msg.pose.position.x << ", "
                   << goal_msg.pose.position.y << ").");
+}
+
+void GoalPublisherNode::publishAutoSequenceState() const
+{
+  std_msgs::Int16 state_msg;
+  state_msg.data = static_cast<short>(this->auto_sequence_state_);
+  this->pub_auto_sequence_state_.publish(state_msg);
+}
+
+bool GoalPublisherNode::startAutoSequenceIfReady(const std::string& trigger_source)
+{
+  if (!updateRobotPoseInMap())
+  {
+    ROS_WARN_STREAM("Rejected auto sequence trigger from " << trigger_source
+                    << ": robot pose in map is unavailable.");
+    return false;
+  }
+
+  const double distance_to_handoff =
+    calculatePlanarDistance(this->pose_map_robot_, this->auto_sequence_handoff_pose_.pose);
+  if (distance_to_handoff > this->auto_sequence_start_position_tolerance_m_)
+  {
+    ROS_WARN_STREAM("Rejected auto sequence trigger from " << trigger_source
+                    << ": robot is " << distance_to_handoff
+                    << " m away from the handoff pose ("
+                    << this->auto_sequence_handoff_pose_.pose.position.x << ", "
+                    << this->auto_sequence_handoff_pose_.pose.position.y
+                    << "), tolerance=" << this->auto_sequence_start_position_tolerance_m_ << ".");
+    return false;
+  }
+
+  this->auto_sequence_start_time_ = ros::Time::now();
+  this->pre_final_selection_preview_logged_ = false;
+  this->current_inspection_goal_idx_ = 0;
+  this->reached_original_waypoint_count_ = 0;
+
+  if (this->respawn_models_ready_)
+  {
+    publishAutoGoal(this->auto_goal_1_, "first");
+    this->auto_sequence_state_ = NAVIGATING_TO_FIRST;
+    ROS_INFO_STREAM("Accepted auto sequence trigger from " << trigger_source
+                    << ". Starting post-handoff mission from the first auto goal.");
+  }
+  else
+  {
+    this->auto_sequence_state_ = WAITING_FOR_RESPAWN;
+    ROS_INFO_STREAM("Accepted auto sequence trigger from " << trigger_source
+                    << ", but respawned objects are not ready yet. Waiting before starting.");
+  }
+
+  publishAutoSequenceState();
+  return true;
 }
 
 std::pair<double, double> GoalPublisherNode::calculatePoseError(const geometry_msgs::Pose& pose_robot, const geometry_msgs::Pose& pose_goal)

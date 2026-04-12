@@ -1,0 +1,8 @@
+recognized_digits=[1, -1, -1, -1, -1, -1, -1]; counts={1: 1}; least_frequent_digits=[1]; least_count=1
+block_id=6, cube_x=-3.154, cube_y=19.817, recognized_digit=1
+block_id=7, cube_x=-1.796, cube_y=17.385, recognized_digit=-1
+block_id=1, cube_x=-2.358, cube_y=6.261, recognized_digit=-1
+block_id=2, cube_x=-10.023, cube_y=6.625, recognized_digit=-1
+block_id=3, cube_x=-12.687, cube_y=6.942, recognized_digit=-1
+block_id=4, cube_x=-9.213, cube_y=10.949, recognized_digit=-1
+block_id=5, cube_x=-6.962, cube_y=14.768, recognized_digit=-1

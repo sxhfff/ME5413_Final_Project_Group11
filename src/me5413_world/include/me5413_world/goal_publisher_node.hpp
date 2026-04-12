@@ -58,11 +58,10 @@ class GoalPublisherNode
     WAITING_FOR_RESPAWN = 1,
     NAVIGATING_TO_FIRST = 2,
     NAVIGATING_TO_SECOND = 3,
-    NAVIGATING_TO_TOP_CORRIDOR_WAYPOINTS = 4,
-    NAVIGATING_TO_INTERMEDIATE = 5,
-    NAVIGATING_TO_PRE_FINAL = 6,
-    NAVIGATING_TO_INSPECTION_POINTS = 7,
-    NAVIGATING_TO_MATCHED_TARGET = 8,
+    NAVIGATING_TO_INTERMEDIATE = 4,
+    NAVIGATING_TO_PRE_FINAL = 5,
+    NAVIGATING_TO_INSPECTION_POINTS = 6,
+    NAVIGATING_TO_MATCHED_TARGET = 7,
   };
 
   void timerCallback(const ros::TimerEvent&);
@@ -73,6 +72,7 @@ class GoalPublisherNode
   void modelStatesCallback(const gazebo_msgs::ModelStates::ConstPtr& model_states);
   void respawnObjectsCallback(const std_msgs::Int16::ConstPtr& respawn_msg);
   void expectedDigitCallback(const std_msgs::Int16::ConstPtr& expected_digit_msg);
+  void startAutoSequenceCallback(const std_msgs::Bool::ConstPtr& start_msg);
   void costmapCallback(const nav_msgs::OccupancyGrid::ConstPtr& costmap);
   void amclPoseCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& amcl_pose_msg);
   
@@ -85,7 +85,9 @@ class GoalPublisherNode
   bool isOccupiedInCostmap(const geometry_msgs::PoseStamped& pose, int8_t* cost_value = nullptr) const;
   geometry_msgs::PoseStamped choosePreFinalGoal() const;
   void publishAutoGoal(const geometry_msgs::PoseStamped& goal, const std::string& label);
+  void publishAutoSequenceState() const;
   double calculatePlanarDistance(const geometry_msgs::Pose& pose_robot, const geometry_msgs::Pose& pose_goal) const;
+  bool startAutoSequenceIfReady(const std::string& trigger_source);
   bool maybeRelocalizeAtWaypoint(const geometry_msgs::PoseStamped& waypoint, const std::string& label);
   bool getRoomBoundsForPose(const geometry_msgs::Pose& pose,
                             double* min_x,
@@ -111,6 +113,7 @@ class GoalPublisherNode
   ros::Publisher pub_relative_position_error_;
   ros::Publisher pub_relative_heading_error_;
   ros::Publisher pub_initialpose_;
+  ros::Publisher pub_auto_sequence_state_;
 
   ros::Subscriber sub_robot_odom_;
   ros::Subscriber sub_goal_name_;
@@ -119,6 +122,7 @@ class GoalPublisherNode
   ros::Subscriber sub_model_states_;
   ros::Subscriber sub_respawn_objects_;
   ros::Subscriber sub_expected_digit_;
+  ros::Subscriber sub_start_auto_sequence_;
   ros::Subscriber sub_costmap_;
   ros::Subscriber sub_amcl_pose_;
   ros::ServiceClient start_recognition_client_;
@@ -143,8 +147,6 @@ class GoalPublisherNode
   geometry_msgs::PoseStamped auto_goal_1_;
   geometry_msgs::PoseStamped auto_goal_2_;
   geometry_msgs::PoseStamped auto_goal_intermediate_;
-  std::vector<geometry_msgs::PoseStamped> top_corridor_waypoints_;
-  std::size_t current_top_corridor_waypoint_idx_;
   geometry_msgs::PoseStamped auto_goal_pre_final_selected_;
   geometry_msgs::PoseStamped auto_goal_3_;
   std::vector<geometry_msgs::PoseStamped> inspection_goals_;
@@ -153,6 +155,7 @@ class GoalPublisherNode
   geometry_msgs::PoseStamped matched_target_goal_;
   geometry_msgs::PoseStamped auto_goal_intermediate_candidate_1_;
   geometry_msgs::PoseStamped auto_goal_intermediate_candidate_2_;
+  geometry_msgs::PoseStamped auto_sequence_handoff_pose_;
   nav_msgs::OccupancyGrid latest_costmap_;
   bool has_costmap_;
   bool has_amcl_pose_;
@@ -181,6 +184,8 @@ class GoalPublisherNode
   AutoSequenceState auto_sequence_state_;
   double auto_goal_tolerance_;
   double auto_goal_heading_tolerance_deg_;
+  double first_auto_goal_heading_tolerance_deg_;
+  double auto_sequence_start_position_tolerance_m_;
   bool respawn_models_ready_;
   bool pre_final_selection_preview_logged_;
   bool has_cone_model_;

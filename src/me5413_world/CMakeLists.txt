@@ -32,6 +32,8 @@ catkin_package(
 
 catkin_install_python(PROGRAMS
   scripts/pointcloud_to_scan_node.py
+  scripts/start_robot.py
+  scripts/test_goal_publisher_handoff.py
   src/digit_recognition_service_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

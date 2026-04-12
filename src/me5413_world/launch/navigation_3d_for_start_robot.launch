@@ -1,17 +1,19 @@
 <launch>
 
   <!--
-    Split-launch navigation stack:
-    - world.launch is started separately
-    - localization_3d_fusion.launch provides /odometry/filtered from 3D lidar + wheel + IMU
-    - AMCL still uses the front 2D laser for map -> odom
-    - move_base uses the local obstacle scan generated from the 3D lidar
+    Split-launch 3D navigation stack for use with start_robot.py:
+    - world_for_start_robot.launch is started separately
+    - localization_3d_fusion.launch provides /odometry/filtered
+    - AMCL still uses /front/scan for map -> odom
+    - move_base uses /local_obstacle_scan generated from the 3D lidar
+    - goal_publisher_node is NOT started here; start_robot.py will launch it later
+    - digit_recognition_service_node is NOT started here; start_robot.py manages it
   -->
 
   <arg name="map_file" default="$(find me5413_world)/maps/manual_cut_direct_2d_map_v3_thick.yaml"/>
   <arg name="points_topic" default="/mid/points" />
   <arg name="lidar_frame_id" default="velodyne" />
-  <arg name="amcl_scan_topic" default="/front/scan" />
+  <arg name="amcl_scan_topic" default="front/scan" />
   <arg name="initial_pose_x" default="-0.00359" />
   <arg name="initial_pose_y" default="0.024" />
   <arg name="initial_pose_a" default="1.5708" />
@@ -23,10 +25,7 @@
 
   <node name="teleop_twist_keyboard" pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" output="screen" respawn="true"/>
 
-  <node name="map_server"
-        pkg="map_server"
-        type="map_server"
-        args="$(arg map_file)" />
+  <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
 
   <include file="$(find me5413_world)/launch/include/amcl_with_initial_pose.launch">
     <arg name="scan_topic" value="$(arg amcl_scan_topic)" />
@@ -52,11 +51,6 @@
 
   <include file="$(find me5413_world)/launch/include/move_base_local_scan.launch" />
 
-  <node type="rviz"
-        name="rviz"
-        pkg="rviz"
-        args="-d $(find me5413_world)/rviz/navigation.rviz"
-        output="log"
-        respawn="true"/>
+  <node type="rviz" name="rviz" pkg="rviz" args="-d $(find me5413_world)/rviz/navigation.rviz" output="log" respawn="true"/>
 
 </launch>

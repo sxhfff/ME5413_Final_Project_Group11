@@ -11,7 +11,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
-from digit_recognizer import DigitRecognizer     # Import our digit recognizer class
+from digit_recognizer import DigitRecognizer as SecondFloorDigitRecognizer
+from digit_recognizer_firstfloor import DigitRecognizer as FirstFloorDigitRecognizer
 from visualization_msgs.msg import Marker         # Import Marker for RViz visualization
 
 # Define a ROS node class that implements the digit recognition service functionality.
@@ -24,15 +25,23 @@ class DigitRecognitionServiceNode:
         # It is initially set to 0.
         self.last_digit = 0
 
-        # Create an instance of the DigitRecognizer class.
-        # The DigitRecognizer internally subscribes to the camera topic (/front/image_raw) and performs recognition.
-        self.recognizer = DigitRecognizer()
+        self.recognizers = {}
+        self.active_mode = None
+        self.recognizer = None
+        default_mode = rospy.get_param("~default_recognizer_mode", "firstfloor")
+        self.switch_recognizer(default_mode)
 
         # Define and advertise the ROS services for starting and stopping digit recognition.
         # When the service 'start_recognition' is called, handle_start is triggered.
         self.start_srv = rospy.Service('start_recognition', Trigger, self.handle_start)
         # When the service 'stop_recognition' is called, handle_stop is triggered.
         self.stop_srv  = rospy.Service('stop_recognition', Trigger, self.handle_stop)
+        self.switch_firstfloor_srv = rospy.Service(
+            'switch_to_firstfloor_recognizer', Trigger, self.handle_switch_firstfloor
+        )
+        self.switch_secondfloor_srv = rospy.Service(
+            'switch_to_secondfloor_recognizer', Trigger, self.handle_switch_secondfloor
+        )
 
         # Create a ROS publisher for a Marker message to visualize the recognized digit.
         # The topic name is 'digit_recognition_marker' (without a leading slash).
@@ -53,7 +62,48 @@ class DigitRecognitionServiceNode:
         rospy.Timer(rospy.Duration(1.0), self.timer_publish)
 
         # Log that the service node has started successfully.
-        rospy.loginfo("DigitRecognitionServiceNode 启动完毕，当前显示 = 0，等待服务调用…")
+        rospy.loginfo(
+            "DigitRecognitionServiceNode 启动完毕，当前识别器 = %s，等待服务调用…",
+            self.active_mode,
+        )
+
+    def create_recognizer(self, mode):
+        if mode == "firstfloor":
+            return FirstFloorDigitRecognizer()
+        if mode == "secondfloor":
+            return SecondFloorDigitRecognizer()
+        raise ValueError("Unknown recognizer mode: {}".format(mode))
+
+    def stop_active_recognition(self):
+        thread = getattr(self.recognizer, "thread", None)
+        if thread is not None and thread.is_alive():
+            rospy.loginfo("Stopping active recognition before switching recognizer mode.")
+            self.recognizer.stop_recognition()
+
+    def switch_recognizer(self, mode):
+        mode = mode.lower()
+        if self.active_mode == mode and self.recognizer is not None:
+            return
+
+        if self.recognizer is not None:
+            self.stop_active_recognition()
+
+        recognizer = self.recognizers.get(mode)
+        if recognizer is None:
+            recognizer = self.create_recognizer(mode)
+            self.recognizers[mode] = recognizer
+
+        self.recognizer = recognizer
+        self.active_mode = mode
+        rospy.loginfo("Switched digit recognizer to %s mode.", mode)
+
+    def handle_switch_firstfloor(self, req):
+        self.switch_recognizer("firstfloor")
+        return TriggerResponse(success=True, message="已切换到一楼数字识别器。")
+
+    def handle_switch_secondfloor(self, req):
+        self.switch_recognizer("secondfloor")
+        return TriggerResponse(success=True, message="已切换到二楼数字识别器。")
 
     def handle_start(self, req):
         """

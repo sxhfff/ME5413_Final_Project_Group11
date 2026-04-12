@@ -1,503 +1,215 @@
-#!/usr/bin/env python3
-import os
-import shutil
-import subprocess
-import tempfile
-import threading
-
-import cv2
-import cv_bridge
-import numpy as np
-import rospy
-from sensor_msgs.msg import Image
-
-SUPPORTED_DIGITS = tuple(str(digit) for digit in range(1, 10))
-OCR_WHITELIST = "".join(SUPPORTED_DIGITS)
-DEFAULT_IMAGE_TOPIC = "/front/image_raw"
-
+#!/usr/bin/env python3                      # Specify the interpreter for the script as Python 3
+import rospy                                # Import ROS Python API for node initialization and logging
+import cv2                                  # Import OpenCV for image processing functions
+import cv_bridge                            # Import cv_bridge to convert ROS Image messages to OpenCV images
+import numpy as np                          # Import numpy for numerical operations (e.g., arrays, linspace)
+import threading                            # Import threading to run recognition in a separate thread
+import time                                 # Import time module for sleep and timing functions
+import os                                   # Import os module for file path operations
+from sensor_msgs.msg import Image           # Import Image message type from sensor_msgs package
 
 class DigitRecognizer:
-    def __init__(self):
+    def __init__(self, templates_dir=None):
+        """
+        Initialize the digit recognizer:
+         - Load template images (in grayscale) with filenames 0.png to 9.png from a templates folder.
+         - Initialize a cv_bridge instance and subscribe to the /front/image_raw topic to receive images.
+         - Initialize internal variables to store the latest image, the best recognized digit, and its matching score.
+        """
+        # Initialize an empty dictionary to store template images keyed by digit (as string)
+        self.templates = {}
+        # If no template directory is provided, determine the default 'templates' directory relative to the script
+        if templates_dir is None:
+            script_dir = os.path.dirname(os.path.abspath(__file__))  # Get directory of current script
+            templates_dir = os.path.join(script_dir, "templates")       # Append "templates" folder to script directory
+        package_root = os.path.abspath(os.path.join(script_dir, ".."))
+        # Loop through digits 0 to 9 to load each template image
+        for digit in range(10):
+            # Construct the file path for the template image (e.g., "templates/0.png")
+            template_path = os.path.join(templates_dir, f"{digit}.png")
+            # Read the template image in grayscale mode
+            template_img = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
+            if template_img is None and digit > 0:
+                model_template_path = os.path.join(
+                    package_root,
+                    "models",
+                    f"number{digit}",
+                    "materials",
+                    "textures",
+                    f"number{digit}.png",
+                )
+                model_template = cv2.imread(model_template_path, cv2.IMREAD_UNCHANGED)
+                if model_template is not None:
+                    if model_template.ndim == 3 and model_template.shape[2] == 4:
+                        template_img = model_template[:, :, 3]
+                    elif model_template.ndim == 3:
+                        template_img = cv2.cvtColor(model_template, cv2.COLOR_BGR2GRAY)
+                    else:
+                        template_img = model_template
+                    rospy.loginfo("使用模型贴图作为数字 %d 的模板：%s", digit, model_template_path)
+            # If the image is successfully loaded, store it in the templates dictionary using the digit as key
+            if template_img is not None:
+                self.templates[str(digit)] = template_img
+            else:
+                # Log a warning if the template image could not be found or loaded
+                rospy.logwarn("模板图片未找到：{}".format(template_path))
+        # If no templates were loaded, raise an exception to halt the node
+        if not self.templates:
+            raise Exception("未加载任何模板，请检查模板路径！")
+        
+        # Create a cv_bridge instance to convert between ROS Image messages and OpenCV images
         self.bridge = cv_bridge.CvBridge()
+        # Variable to store the latest received image frame from the camera
         self.current_frame = None
-
-        self.image_topic = rospy.get_param("~image_topic", DEFAULT_IMAGE_TOPIC)
-        self.vote_rate_hz = float(rospy.get_param("~vote_rate_hz", 8.0))
-        self.ocr_min_score = float(rospy.get_param("~ocr_min_score", 0.45))
-        self.roi_x_margin_ratio = float(rospy.get_param("~roi_x_margin_ratio", 0.10))
-        self.roi_y_margin_ratio = float(rospy.get_param("~roi_y_margin_ratio", 0.12))
-        self.min_area_ratio = float(rospy.get_param("~min_area_ratio", 0.0008))
-        self.max_area_ratio = float(rospy.get_param("~max_area_ratio", 0.22))
-        self.min_aspect_ratio = float(rospy.get_param("~min_aspect_ratio", 0.45))
-        self.max_aspect_ratio = float(rospy.get_param("~max_aspect_ratio", 1.75))
-        self.max_center_offset_ratio = float(rospy.get_param("~max_center_offset_ratio", 0.38))
-        self.max_candidates = int(rospy.get_param("~max_candidates", 6))
-        self.candidate_padding_ratio = float(rospy.get_param("~candidate_padding_ratio", 0.10))
-        self.candidate_iou_threshold = float(rospy.get_param("~candidate_iou_threshold", 0.35))
-        self.consensus_min_detections = int(rospy.get_param("~consensus_min_detections", 3))
-        self.consensus_min_avg_score = float(rospy.get_param("~consensus_min_avg_score", 0.45))
-        self.consensus_min_max_score = float(rospy.get_param("~consensus_min_max_score", 0.55))
-
-        self.tesseract_cmd = shutil.which(rospy.get_param("~tesseract_cmd", "tesseract"))
-        if self.tesseract_cmd is None:
-            rospy.logwarn(
-                "未找到 tesseract 可执行文件。当前 OCR 简化版已接入，但识别结果会始终为空。"
-            )
-        else:
-            rospy.loginfo("Using tesseract executable: %s", self.tesseract_cmd)
-
-        self.image_sub = rospy.Subscriber(self.image_topic, Image, self.image_callback)
-
+        # Subscribe to the camera topic '/front/image_raw' to get new image messages and call image_callback when received
+        self.image_sub = rospy.Subscriber('/front/image_raw', Image, self.image_callback)
+        
+        # Variable to store the best recognized digit (based on matching score)
         self.best_digit = None
-        self.best_score = -1.0
+        # Variable to store the highest matching score found (initialized to -1 to indicate no valid match yet)
+        self.best_score = -1
+        # Create a threading Event to control when the recognition thread should stop
         self.stop_event = threading.Event()
+        # Initialize the thread variable; it will be used later to run the recognition loop
         self.thread = None
-        self.detection_counts = {}
-        self.detection_scores = {}
 
     def image_callback(self, img_msg):
+        """
+        Callback function for processing images:
+         - Convert the incoming ROS Image message to an OpenCV BGR image using cv_bridge.
+         - Save the converted image to self.current_frame for later processing.
+        """
         try:
+            # Convert the ROS Image message to an OpenCV image with "bgr8" encoding format
             self.current_frame = self.bridge.imgmsg_to_cv2(img_msg, "bgr8")
-        except cv_bridge.CvBridgeError as exc:
-            rospy.logerr("cv_bridge 转换错误：%s", exc)
-
-    def preprocess_frame(self, cv_image):
-        gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-        gray = clahe.apply(gray)
-
-        height, width = gray.shape[:2]
-        x_margin = int(width * self.roi_x_margin_ratio)
-        y_margin = int(height * self.roi_y_margin_ratio)
-        roi = gray[y_margin:height - y_margin, x_margin:width - x_margin]
-        if roi.size == 0:
-            roi = gray
-            x_margin = 0
-            y_margin = 0
-
-        return {
-            "gray": roi,
-            "x_offset": x_margin,
-            "y_offset": y_margin,
-            "frame_width": width,
-            "frame_height": height,
-        }
-
-    def order_points(self, points):
-        points = np.array(points, dtype=np.float32)
-        rect = np.zeros((4, 2), dtype=np.float32)
-        sums = points.sum(axis=1)
-        diffs = np.diff(points, axis=1)
-        rect[0] = points[np.argmin(sums)]
-        rect[2] = points[np.argmax(sums)]
-        rect[1] = points[np.argmin(diffs)]
-        rect[3] = points[np.argmax(diffs)]
-        return rect
-
-    def crop_rotated_patch(self, image, contour):
-        rect = cv2.minAreaRect(contour)
-        (center_x, center_y), (width, height), _ = rect
-        if width < 1 or height < 1:
-            return None
-
-        box = cv2.boxPoints(rect)
-        ordered_box = self.order_points(box)
-        target_width = max(1, int(round(max(width, height))))
-        target_height = max(1, int(round(min(width, height))))
-        if target_width < target_height:
-            target_width, target_height = target_height, target_width
-
-        dst = np.array(
-            [
-                [0, 0],
-                [target_width - 1, 0],
-                [target_width - 1, target_height - 1],
-                [0, target_height - 1],
-            ],
-            dtype=np.float32,
-        )
-        transform = cv2.getPerspectiveTransform(ordered_box, dst)
-        warped = cv2.warpPerspective(image, transform, (target_width, target_height))
-        if warped.size == 0:
-            return None
-
-        if warped.shape[0] > warped.shape[1]:
-            warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
-
-        bbox = cv2.boundingRect(contour)
-        return {
-            "patch": warped,
-            "bbox": bbox,
-            "center": (center_x, center_y),
-            "size": (width, height),
-        }
-
-    def build_candidate_masks(self, gray):
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        _, binary_dark = cv2.threshold(
-            blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
-        )
-        _, binary_bright = cv2.threshold(
-            blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-        edges = cv2.Canny(blurred, 50, 150)
-        edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
-
-        open_kernel = np.ones((3, 3), np.uint8)
-        close_kernel = np.ones((5, 5), np.uint8)
-        masks = []
-        for mask in (binary_dark, binary_bright, edges):
-            cleaned = cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_kernel)
-            cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, close_kernel)
-            masks.append(cleaned)
-        return masks
-
-    def candidate_penalty(self, candidate, roi_shape):
-        roi_h, roi_w = roi_shape[:2]
-        center_x = candidate["center"][0]
-        center_offset = abs(center_x - (roi_w / 2.0)) / max(1.0, roi_w / 2.0)
-        box_w, box_h = candidate["bbox"][2], candidate["bbox"][3]
-        area_ratio = (box_w * box_h) / float(max(1, roi_w * roi_h))
-        return center_offset + (0.15 * area_ratio)
-
-    def iou(self, box_a, box_b):
-        ax1, ay1, aw, ah = box_a
-        bx1, by1, bw, bh = box_b
-        ax2, ay2 = ax1 + aw, ay1 + ah
-        bx2, by2 = bx1 + bw, by1 + bh
-
-        inter_x1 = max(ax1, bx1)
-        inter_y1 = max(ay1, by1)
-        inter_x2 = min(ax2, bx2)
-        inter_y2 = min(ay2, by2)
-        inter_w = max(0, inter_x2 - inter_x1)
-        inter_h = max(0, inter_y2 - inter_y1)
-        inter_area = inter_w * inter_h
-        if inter_area <= 0:
-            return 0.0
-
-        union_area = (aw * ah) + (bw * bh) - inter_area
-        return inter_area / float(max(1, union_area))
-
-    def extract_candidates(self, frame_maps):
-        gray = frame_maps["gray"]
-        roi_h, roi_w = gray.shape[:2]
-        roi_area = float(max(1, roi_h * roi_w))
-        max_center_offset_px = self.max_center_offset_ratio * (roi_w / 2.0)
-
-        candidates = []
-        for mask in self.build_candidate_masks(gray):
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for contour in contours:
-                area = cv2.contourArea(contour)
-                if area <= 0:
-                    continue
-
-                area_ratio = area / roi_area
-                if area_ratio < self.min_area_ratio or area_ratio > self.max_area_ratio:
-                    continue
-
-                rect = cv2.minAreaRect(contour)
-                (_, _), (width, height), _ = rect
-                if width < 12 or height < 12:
-                    continue
-
-                long_side = max(width, height)
-                short_side = min(width, height)
-                if short_side <= 1:
-                    continue
-
-                aspect_ratio = long_side / short_side
-                if aspect_ratio < self.min_aspect_ratio or aspect_ratio > self.max_aspect_ratio:
-                    continue
-
-                center_x = rect[0][0]
-                if abs(center_x - (roi_w / 2.0)) > max_center_offset_px:
-                    continue
-
-                candidate = self.crop_rotated_patch(gray, contour)
-                if candidate is None:
-                    continue
-
-                candidate["penalty"] = self.candidate_penalty(candidate, gray.shape)
-                candidates.append(candidate)
-
-        candidates.sort(key=lambda item: item["penalty"])
-
-        deduped = []
-        for candidate in candidates:
-            if any(self.iou(candidate["bbox"], kept["bbox"]) > self.candidate_iou_threshold for kept in deduped):
-                continue
-            deduped.append(candidate)
-            if len(deduped) >= self.max_candidates:
-                break
-        return deduped
-
-    def tighten_digit_roi(self, patch):
-        if patch is None or patch.size == 0:
-            return None
-
-        patch = cv2.copyMakeBorder(
-            patch, 8, 8, 8, 8, cv2.BORDER_CONSTANT, value=255
-        )
-        blurred = cv2.GaussianBlur(patch, (5, 5), 0)
-        _, binary_inv = cv2.threshold(
-            blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
-        )
-        binary_inv = cv2.morphologyEx(
-            binary_inv, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)
-        )
-
-        points = cv2.findNonZero(binary_inv)
-        if points is None:
-            return None
-
-        x, y, w, h = cv2.boundingRect(points)
-        if w < 8 or h < 12:
-            return None
-
-        pad_x = max(4, int(w * self.candidate_padding_ratio))
-        pad_y = max(4, int(h * self.candidate_padding_ratio))
-        x0 = max(0, x - pad_x)
-        y0 = max(0, y - pad_y)
-        x1 = min(patch.shape[1], x + w + pad_x)
-        y1 = min(patch.shape[0], y + h + pad_y)
-        roi = patch[y0:y1, x0:x1]
-        if roi.size == 0:
-            return None
-        return roi
-
-    def build_ocr_variants(self, roi):
-        resized = cv2.resize(roi, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        blurred = cv2.GaussianBlur(resized, (3, 3), 0)
-
-        _, binary_inv = cv2.threshold(
-            blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
-        )
-        _, binary = cv2.threshold(
-            blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-        adaptive = cv2.adaptiveThreshold(
-            blurred,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV,
-            31,
-            11,
-        )
-
-        variants = [resized, binary_inv, binary, adaptive]
-        cleaned_variants = []
-        for variant in variants:
-            if variant.ndim == 3:
-                variant = cv2.cvtColor(variant, cv2.COLOR_BGR2GRAY)
-            cleaned_variants.append(variant)
-        return cleaned_variants
-
-    def run_tesseract(self, image):
-        if self.tesseract_cmd is None:
-            return None
-
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
-            temp_path = temp_file.name
-
-        try:
-            cv2.imwrite(temp_path, image)
-            command = [
-                self.tesseract_cmd,
-                temp_path,
-                "stdout",
-                "--psm",
-                "10",
-                "--oem",
-                "3",
-                "-c",
-                "tessedit_char_whitelist={}".format(OCR_WHITELIST),
-                "tsv",
-            ]
-            result = subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False,
-            )
-            if result.returncode != 0:
-                rospy.logdebug("tesseract failed: %s", result.stderr.strip())
-                return None
-
-            best_digit = None
-            best_conf = -1.0
-            for line in result.stdout.splitlines()[1:]:
-                parts = line.split("\t")
-                if len(parts) < 12:
-                    continue
-                text = parts[11].strip()
-                if text not in SUPPORTED_DIGITS:
-                    continue
-                try:
-                    confidence = float(parts[10])
-                except ValueError:
-                    continue
-                if confidence > best_conf:
-                    best_conf = confidence
-                    best_digit = text
-
-            if best_digit is None:
-                return None
-            return best_digit, max(0.0, min(1.0, best_conf / 100.0))
-        finally:
-            try:
-                os.remove(temp_path)
-            except OSError:
-                pass
-
-    def recognize_patch_with_ocr(self, patch):
-        roi = self.tighten_digit_roi(patch)
-        if roi is None:
-            return None
-
-        votes = {}
-        for variant in self.build_ocr_variants(roi):
-            result = self.run_tesseract(variant)
-            if result is None:
-                continue
-            digit, score = result
-            votes.setdefault(digit, []).append(score)
-
-        if not votes:
-            return None
-
-        ranked = sorted(
-            votes.items(),
-            key=lambda item: (len(item[1]), float(np.mean(item[1])), float(max(item[1]))),
-            reverse=True,
-        )
-        digit, scores = ranked[0]
-        final_score = 0.65 * float(np.mean(scores)) + 0.35 * float(max(scores))
-        if final_score < self.ocr_min_score:
-            return None
-        return int(digit), final_score
-
-    def recognize_digit(self, cv_image):
-        frame_maps = self.preprocess_frame(cv_image)
-        candidates = self.extract_candidates(frame_maps)
-        if not candidates:
-            return None
-
-        best_result = None
-        best_total_score = -1.0
-        roi_w = frame_maps["gray"].shape[1]
-        frame_center_x = cv_image.shape[1] / 2.0
-
-        for candidate in candidates:
-            ocr_result = self.recognize_patch_with_ocr(candidate["patch"])
-            if ocr_result is None:
-                continue
-
-            digit, ocr_score = ocr_result
-            center_x = frame_maps["x_offset"] + candidate["center"][0]
-            pixel_offset = center_x - frame_center_x
-            center_penalty = abs(candidate["center"][0] - (roi_w / 2.0)) / max(1.0, roi_w / 2.0)
-            total_score = ocr_score - (0.10 * center_penalty)
-
-            if total_score > best_total_score:
-                best_total_score = total_score
-                best_result = (digit, total_score, pixel_offset)
-
-        return best_result
+        except cv_bridge.CvBridgeError as e:
+            # Log an error if the image conversion fails
+            rospy.logerr("cv_bridge 转换错误：%s", e)
 
     def recognition_loop(self):
-        rate_hz = max(1.0, self.vote_rate_hz)
-        rate = rospy.Rate(rate_hz)
-        missing_ocr_warned = False
-
-        while not self.stop_event.is_set():
+        """
+        Recognition thread loop:
+         - Check the latest image (updated via the image callback) at regular intervals.
+         - If an image is available, call recognize_digit() to perform template matching.
+         - If a matching score higher than the current best is found, update the best match result.
+         - Continue looping until a stop signal is received.
+        """
+        rate = rospy.Rate(10)  # Set loop rate to 10 Hz
+        while not self.stop_event.is_set():  # Loop until stop_event flag is set
             if self.current_frame is None:
+                # If no image has been received yet, sleep and continue checking later
                 rate.sleep()
                 continue
 
-            if self.tesseract_cmd is None:
-                if not missing_ocr_warned:
-                    rospy.logwarn("OCR 未启用，因为系统中未找到 tesseract。")
-                    missing_ocr_warned = True
-                rate.sleep()
-                continue
-
+            # Make a copy of the current frame to avoid issues with concurrent access in the callback
             frame = self.current_frame.copy()
+            # Perform digit recognition on the copied frame using template matching
             result = self.recognize_digit(frame)
             if result is not None:
+                # Unpack the recognition result: digit, matching score, and horizontal offset
                 digit, score, pixel_offset = result
-                self.detection_counts[digit] = self.detection_counts.get(digit, 0) + 1
-                self.detection_scores.setdefault(digit, []).append(score)
-
+                # If the current matching score is better than the previously stored best score, update the best result
                 if score > self.best_score:
                     self.best_score = score
                     self.best_digit = digit
-
-                rospy.loginfo(
-                    "OCR 候选: 数字 %s, 分数 %.3f, 偏移 %.1f px, 命中次数 %d",
-                    digit,
-                    score,
-                    pixel_offset,
-                    self.detection_counts[digit],
-                )
+                    rospy.loginfo("更新最佳匹配：数字 %s，分数 %.2f，偏移 %.2f", digit, score, pixel_offset)
+            # Sleep until the next iteration of the loop
             rate.sleep()
 
-    def select_consensus_digit(self):
-        if not self.detection_counts:
-            return None
-
-        ranked_digits = sorted(
-            self.detection_counts.keys(),
-            key=lambda digit: (
-                self.detection_counts[digit],
-                float(np.mean(self.detection_scores.get(digit, [-1.0]))),
-                float(max(self.detection_scores.get(digit, [-1.0]))),
-            ),
-            reverse=True,
-        )
-
-        best_digit = ranked_digits[0]
-        best_scores = self.detection_scores.get(best_digit, [self.best_score])
-        best_avg_score = float(np.mean(best_scores))
-        best_max_score = float(max(best_scores))
-        if (
-            self.detection_counts[best_digit] < self.consensus_min_detections
-            or best_avg_score < self.consensus_min_avg_score
-            or best_max_score < self.consensus_min_max_score
-        ):
-            rospy.logwarn(
-                "最佳候选 %s 证据不足: 命中次数 %d, 平均分 %.3f, 最高分 %.3f。",
-                best_digit,
-                self.detection_counts[best_digit],
-                best_avg_score,
-                best_max_score,
-            )
-            return None
-
-        rospy.loginfo(
-            "最终识别: 数字 %s, 命中次数 %d, 平均分 %.3f, 最高分 %.3f",
-            best_digit,
-            self.detection_counts[best_digit],
-            best_avg_score,
-            best_max_score,
-        )
-        return best_digit
-
     def start_recognition(self):
-        self.stop_event.clear()
-        self.best_digit = None
-        self.best_score = -1.0
-        self.detection_counts = {}
-        self.detection_scores = {}
+        """
+        Start the recognition thread:
+         - Clear previous recognition results.
+         - Start a new thread running the recognition_loop to continuously process incoming images.
+        """
+        self.stop_event.clear()       # Clear the event flag to allow the loop to run
+        self.best_digit = None        # Reset the best recognized digit
+        self.best_score = -1          # Reset the best matching score
+        # Create a new thread targeting the recognition_loop function
         self.thread = threading.Thread(target=self.recognition_loop)
-        self.thread.start()
-        rospy.loginfo("数字识别启动……")
+        self.thread.start()           # Start the recognition thread
+        rospy.loginfo("数字识别启动……")  # Log that digit recognition has started
 
     def stop_recognition(self):
-        self.stop_event.set()
+        """
+        Stop the recognition thread:
+         - Signal the recognition_loop to stop and wait for the thread to finish.
+         - Return the best recognized digit found so far.
+        """
+        self.stop_event.set()         # Set the event flag, causing recognition_loop to exit
         if self.thread is not None:
-            self.thread.join()
-        rospy.loginfo("数字识别停止。")
-        return self.select_consensus_digit()
+            self.thread.join()        # Wait for the recognition thread to finish execution
+        rospy.loginfo("数字识别停止。")    # Log that digit recognition has been stopped
+        return self.best_digit        # Return the best recognized digit
+
+    def recognize_digit(self, cv_image):
+        """
+        Recognize a digit using OpenCV template matching:
+         1. Convert the input BGR image to a grayscale image and equalize its histogram.
+         2. For each loaded template, perform matching over multiple scales.
+         3. Select the template with the highest matching score (if it exceeds a specified threshold).
+         4. Calculate the horizontal offset between the matching region's center and the image center.
+         Return a tuple (digit, best_score, pixel_offset); if no match is found, return None.
+        """
+        # Convert the BGR image to grayscale for processing
+        gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+        # Apply histogram equalization to improve contrast
+        gray = cv2.equalizeHist(gray)
+
+        best_score = -1              # Initialize the best score to a very low value
+        best_digit = None            # Initialize best_digit as None
+        best_loc = None              # Variable to store location of the best match
+        best_template_shape = None   # Variable to store the shape of the best matching template
+
+        # Iterate over each loaded template for digits 0-9; perform matching at multiple scales
+        # The comment indicates scales between 1.2 and 2.4 (41 values) even though the docstring mentions 0.4~1.6; adjust as needed.
+        for digit, template in self.templates.items():
+            # Make a copy of the template image and equalize its histogram
+            template_gray = template.copy()
+            template_gray = cv2.equalizeHist(template_gray)
+            # Iterate over a range of scales using np.linspace to generate 41 scale factors between 1.2 and 2.4
+            for scale in np.linspace(1.2, 2.4, 41):
+                try:
+                    # Resize the template image according to the current scale factor using area interpolation
+                    resized_template = cv2.resize(template_gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+                except Exception as e:
+                    # If resizing fails (e.g., due to size issues), continue with the next scale factor
+                    continue
+                # Get the dimensions (height and width) of the resized template
+                tH, tW = resized_template.shape[:2]
+                # Skip this scale if the resized template is larger than the input image
+                if gray.shape[0] < tH or gray.shape[1] < tW:
+                    continue
+                # Perform template matching using the normalized cross-correlation method
+                res = cv2.matchTemplate(gray, resized_template, cv2.TM_CCOEFF_NORMED)
+                # Retrieve the maximum matching score and its location within the result map
+                _, max_val, _, max_loc = cv2.minMaxLoc(res)
+                # If the obtained matching score is higher than the best recorded so far, update the best match variables
+                if max_val > best_score:
+                    best_score = max_val
+                    best_digit = digit
+                    best_loc = max_loc
+                    best_template_shape = resized_template.shape
+        # Define a threshold for matching; if the best score is lower than this, consider recognition unsuccessful
+        threshold = 0.35
+        if best_score < threshold or best_digit is None:
+            return None
+
+        # Calculate the center x-coordinate of the matching region based on the best location and template width
+        tH, tW = best_template_shape
+        match_center_x = best_loc[0] + tW / 2
+        # Calculate the center x-coordinate of the entire image
+        image_center_x = gray.shape[1] / 2
+        # Determine the horizontal offset between the match center and image center
+        pixel_offset = match_center_x - image_center_x
+        # Return the recognized digit, the best matching score, and the computed horizontal offset
+        return best_digit, best_score, pixel_offset
+
+# The following code is commented out. It can be used to test the module independently.
+# if __name__ == "__main__":
+#     rospy.init_node("digit_recognizer_test")
+#     recognizer = DigitRecognizer()
+#     recognizer.start_recognition()
+#     input("按 Enter 停止识别并输出结果……")
+#     result = recognizer.stop_recognition()
+#     rospy.loginfo("最终识别数字：%s", result)

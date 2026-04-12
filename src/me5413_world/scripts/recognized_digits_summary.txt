@@ -1,0 +1,14 @@
+recognized_digits=[1, 1, -1, 1, 1, 3, -1, 8, 3, -1, 3, -1, -1]; counts={1: 4, 3: 3, 8: 1}; least_frequent_digits=[8]; least_count=1
+block_id=13, cube_x=-2.939, cube_y=20.505, recognized_digit=1
+block_id=10, cube_x=-4.548, cube_y=18.512, recognized_digit=1
+block_id=12, cube_x=-2.528, cube_y=17.533, recognized_digit=-1
+block_id=11, cube_x=-3.311, cube_y=15.807, recognized_digit=1
+block_id=3, cube_x=-5.040, cube_y=9.506, recognized_digit=1
+block_id=2, cube_x=-4.383, cube_y=4.912, recognized_digit=3
+block_id=1, cube_x=2.423, cube_y=3.228, recognized_digit=-1
+block_id=4, cube_x=-11.464, cube_y=5.982, recognized_digit=8
+block_id=6, cube_x=-11.554, cube_y=8.395, recognized_digit=3
+block_id=5, cube_x=-11.867, cube_y=2.657, recognized_digit=-1
+block_id=7, cube_x=-11.493, cube_y=15.362, recognized_digit=3
+block_id=8, cube_x=-10.258, cube_y=22.281, recognized_digit=-1
+block_id=9, cube_x=-7.755, cube_y=22.143, recognized_digit=-1
