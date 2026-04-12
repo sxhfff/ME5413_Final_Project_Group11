@@ -1,0 +1,7 @@
+# Experimental Jackal config:
+# - keep the front 2D laser for the existing navigation/debug workflow
+# - switch the 3D lidar from VLP16 to HDL-32E for FAST-LIO experiments
+
+JACKAL_LASER=1
+JACKAL_LASER_3D=1
+JACKAL_LASER_3D_MODEL=hdl32e

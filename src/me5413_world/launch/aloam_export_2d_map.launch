@@ -1,0 +1,82 @@
+<launch>
+  <arg name="cloud_topic" default="/laser_cloud_surround"/>
+  <arg name="cloud_file" default=""/>
+  <arg name="output_prefix" default="$(find me5413_world)/maps/aloam_projected_nav_map"/>
+
+  <arg name="resolution" default="0.05"/>
+  <arg name="min_height" default="0.05"/>
+  <arg name="max_height" default="0.30"/>
+  <arg name="min_range" default="0.30"/>
+  <arg name="max_range" default="10.0"/>
+  <arg name="padding" default="0.50"/>
+  <arg name="min_points_per_cell" default="2"/>
+  <arg name="noise_open_radius_cells" default="1"/>
+  <arg name="inflate_radius" default="0.25"/>
+  <arg name="free_space_radius" default="0.18"/>
+
+  <arg name="crop_min_x" default=""/>
+  <arg name="crop_max_x" default=""/>
+  <arg name="crop_min_y" default=""/>
+  <arg name="crop_max_y" default=""/>
+  <arg name="relative_ground_mode" default="false"/>
+  <arg name="relative_ground_resolution" default="0.30"/>
+  <arg name="relative_ground_quantile" default="0.10"/>
+  <arg name="relative_ground_min_height" default="0.10"/>
+  <arg name="relative_ground_max_height" default="0.80"/>
+  <arg name="relative_ground_min_points" default="3"/>
+  <arg name="auto_slice_scan" default="false"/>
+  <arg name="auto_slice_step" default="0.10"/>
+  <arg name="auto_slice_thickness" default="0.20"/>
+  <arg name="auto_slice_select_count" default="2"/>
+  <arg name="auto_slice_min_separation" default="1.00"/>
+  <arg name="auto_slice_min_points" default="500"/>
+  <arg name="auto_slice_preview_dir" default=""/>
+  <arg name="projection_min_points_per_cell" default="3"/>
+  <arg name="projection_min_height" default=""/>
+  <arg name="projection_max_height" default=""/>
+
+  <node pkg="me5413_world"
+        type="aloam_cloud_to_2d_map.py"
+        name="aloam_cloud_to_2d_map"
+        output="screen">
+    <param name="cloud_topic" value="$(arg cloud_topic)"/>
+    <param name="cloud_file" value="$(arg cloud_file)"/>
+    <param name="output_prefix" value="$(arg output_prefix)"/>
+    <param name="resolution" value="$(arg resolution)"/>
+    <param name="min_height" value="$(arg min_height)"/>
+    <param name="max_height" value="$(arg max_height)"/>
+    <param name="min_range" value="$(arg min_range)"/>
+    <param name="max_range" value="$(arg max_range)"/>
+    <param name="padding" value="$(arg padding)"/>
+    <param name="min_points_per_cell" value="$(arg min_points_per_cell)"/>
+    <param name="noise_open_radius_cells" value="$(arg noise_open_radius_cells)"/>
+    <param name="inflate_radius" value="$(arg inflate_radius)"/>
+    <param name="free_space_radius" value="$(arg free_space_radius)"/>
+    <param name="relative_ground_mode" value="$(arg relative_ground_mode)"/>
+    <param name="relative_ground_resolution" value="$(arg relative_ground_resolution)"/>
+    <param name="relative_ground_quantile" value="$(arg relative_ground_quantile)"/>
+    <param name="relative_ground_min_height" value="$(arg relative_ground_min_height)"/>
+    <param name="relative_ground_max_height" value="$(arg relative_ground_max_height)"/>
+    <param name="relative_ground_min_points" value="$(arg relative_ground_min_points)"/>
+    <param name="auto_slice_scan" value="$(arg auto_slice_scan)"/>
+    <param name="auto_slice_step" value="$(arg auto_slice_step)"/>
+    <param name="auto_slice_thickness" value="$(arg auto_slice_thickness)"/>
+    <param name="auto_slice_select_count" value="$(arg auto_slice_select_count)"/>
+    <param name="auto_slice_min_separation" value="$(arg auto_slice_min_separation)"/>
+    <param name="auto_slice_min_points" value="$(arg auto_slice_min_points)"/>
+    <param name="auto_slice_preview_dir" value="$(arg auto_slice_preview_dir)"/>
+    <param name="projection_min_points_per_cell" value="$(arg projection_min_points_per_cell)"/>
+    <param name="projection_min_height" value="$(arg projection_min_height)"/>
+    <param name="projection_max_height" value="$(arg projection_max_height)"/>
+    <rosparam subst_value="true">
+      crop_min_x: $(arg crop_min_x)
+      crop_max_x: $(arg crop_max_x)
+      crop_min_y: $(arg crop_min_y)
+      crop_max_y: $(arg crop_max_y)
+      merge_layers: []
+      relative_ground_regions: []
+      slice_regions: []
+      projection_regions: []
+    </rosparam>
+  </node>
+</launch>

@@ -1,0 +1,22 @@
+<launch>
+  <arg name="gui" default="true"/>
+  <arg name="headless" default="false"/>
+  <arg name="spawn_box" default="true"/>
+  <arg name="spawn_x" default="-22.5"/>
+  <arg name="spawn_y" default="-7.5"/>
+  <arg name="spawn_yaw" default="0.0"/>
+
+  <!--
+    Experimental world entrypoint for HDL-32E trials.
+    Kept separate from world.launch so rollback is immediate.
+  -->
+  <include file="$(find me5413_world)/launch/world.launch">
+    <arg name="jackal_config" value="front_laser_hdl32e"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="headless" value="$(arg headless)"/>
+    <arg name="spawn_box" value="$(arg spawn_box)"/>
+    <arg name="spawn_x" value="$(arg spawn_x)"/>
+    <arg name="spawn_y" value="$(arg spawn_y)"/>
+    <arg name="spawn_yaw" value="$(arg spawn_yaw)"/>
+  </include>
+</launch>

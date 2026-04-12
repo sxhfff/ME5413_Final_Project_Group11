@@ -1,0 +1,23 @@
+<launch>
+  <arg name="cloud_file" default="/home/yushi/ros_ws/maps/merged_manual_v1.ply"/>
+  <arg name="output_prefix" default="$(find me5413_world)/maps/aloam_obstacle_only_map"/>
+
+  <include file="$(find me5413_world)/launch/aloam_export_2d_map.launch">
+    <arg name="cloud_file" value="$(arg cloud_file)"/>
+    <arg name="output_prefix" value="$(arg output_prefix)"/>
+    <arg name="resolution" value="0.05"/>
+    <arg name="min_range" value="0.30"/>
+    <arg name="max_range" value="25.0"/>
+    <arg name="padding" value="0.50"/>
+    <arg name="min_points_per_cell" value="1"/>
+    <arg name="noise_open_radius_cells" value="0"/>
+    <arg name="inflate_radius" value="0.14"/>
+    <arg name="free_space_radius" value="0.10"/>
+    <arg name="relative_ground_mode" value="true"/>
+    <arg name="relative_ground_resolution" value="0.40"/>
+    <arg name="relative_ground_quantile" value="0.10"/>
+    <arg name="relative_ground_min_height" value="0.10"/>
+    <arg name="relative_ground_max_height" value="1.20"/>
+    <arg name="relative_ground_min_points" value="3"/>
+  </include>
+</launch>
