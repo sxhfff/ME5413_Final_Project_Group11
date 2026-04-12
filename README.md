@@ -12,6 +12,90 @@ NUS ME5413 Autonomous Mobile Robotics Final Project AY25/26
 
 ![cover_image](src/me5413_world/media/overview2526.png)
 
+## A-LOAM Mapping Branch
+
+This branch adds an isolated `A-LOAM + HDL-32E` mapping pipeline without changing the original `main` workflow.
+
+Main added paths:
+
+* `src/A-LOAM`
+* `src/jackal_description/urdf/configs/front_laser_hdl32e`
+* `src/me5413_world/launch/world_hdl32e_experimental.launch`
+* `src/me5413_world/launch/aloam_3d_mapping_hdl32e_experimental.launch`
+* `src/me5413_world/launch/aloam_export_2d_map.launch`
+* `src/me5413_world/launch/aloam_export_obstacle_map.launch`
+* `src/me5413_world/scripts/aloam_cloud_to_2d_map.py`
+* `src/me5413_slam_comparison/scripts/*_aloam.sh`
+* `maps/merged_manual_v1.ply`
+* `maps/merged_manual_v1.bin`
+
+If you only want to reproduce the final A-LOAM mapping setup on this branch, use the following quick-start.
+
+### A-LOAM Quick Start
+
+Assumptions:
+
+* Ubuntu 20.04
+* ROS Noetic
+* Gazebo working in the local ROS environment
+
+Install dependencies:
+
+```bash
+cd ~/ros_ws/src/ME5413_Final_Project_Group11
+rosdep install --from-paths src --ignore-src -r -y
+
+sudo apt install -y \
+  ros-noetic-cv-bridge \
+  ros-noetic-velodyne-description \
+  ros-noetic-jackal-control \
+  ros-noetic-jackal-gazebo \
+  ros-noetic-jackal-navigation \
+  ros-noetic-teleop-twist-keyboard \
+  python3-pip \
+  libpcl-dev \
+  libceres-dev
+```
+
+Build:
+
+```bash
+cd ~/ros_ws/src/ME5413_Final_Project_Group11
+catkin_make
+source devel/setup.bash
+```
+
+Launch the HDL-32E world:
+
+```bash
+roslaunch me5413_world world_hdl32e_experimental.launch
+```
+
+In a second terminal:
+
+```bash
+cd ~/ros_ws/src/ME5413_Final_Project_Group11
+source devel/setup.bash
+roslaunch me5413_world aloam_3d_mapping_hdl32e_experimental.launch
+```
+
+Optional 2D map export:
+
+```bash
+cd ~/ros_ws/src/ME5413_Final_Project_Group11
+source devel/setup.bash
+roslaunch me5413_world aloam_export_2d_map.launch
+```
+
+Optional evaluation workflow:
+
+```bash
+cd ~/ros_ws/src/ME5413_Final_Project_Group11/src/me5413_slam_comparison/scripts
+./record_trajectory_aloam.sh
+./extract_trajectory_aloam.sh
+./evo_compare_aloam.sh
+```
+
 ## Dependencies
 
 * System Requirements:
